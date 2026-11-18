@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 )
 
 // Config holds the host values needed to render one prompt section.

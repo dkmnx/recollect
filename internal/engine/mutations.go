@@ -2,9 +2,9 @@ package engine
 
 import (
 	"fmt"
+	"github.com/dkmnx/recollect/internal/memory"
 	"os"
 	"path/filepath"
-	"recollect/internal/memory"
 	"strings"
 	"time"
 )
@@ -145,6 +145,14 @@ func (e *Engine) AppendFact(req AppendRequest) (AppendResult, error) {
 			Type:        memory.FactTypeProject,
 			CapturedOn:  time.Now().Format(time.DateOnly),
 			Body:        memory.StripPrivateContent(strings.Trim(req.Body, "\n")),
+		}
+		if req.Fact != nil {
+			prepared = memory.PrepareForWrite(*req.Fact)
+			prepared.Name = name
+			if prepared.CapturedOn == "" {
+				prepared.CapturedOn = time.Now().Format(time.DateOnly)
+			}
+			rel = filepath.ToSlash(filepath.Join(prepared.Path, prepared.Name+".md"))
 		}
 		content := []byte(memory.FormatFact(prepared))
 		result := receiptRecord{

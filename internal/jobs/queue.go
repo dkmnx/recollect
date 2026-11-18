@@ -12,9 +12,9 @@ import (
 	"sync"
 	"time"
 
-	"recollect/internal/fsatomic"
-	"recollect/internal/memory"
-	"recollect/internal/oslock"
+	"github.com/dkmnx/recollect/internal/fsatomic"
+	"github.com/dkmnx/recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/oslock"
 )
 
 const defaultLeaseTTL = 5 * time.Minute

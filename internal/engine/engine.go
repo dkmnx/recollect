@@ -5,9 +5,9 @@ package engine
 
 import (
 	"errors"
+	"github.com/dkmnx/recollect/internal/memory"
 	"os"
 	"path/filepath"
-	"recollect/internal/memory"
 	"time"
 )
 
@@ -50,6 +50,11 @@ type AppendRequest struct {
 	Body        string
 	Reason      string
 	Scope       Scope
+	// Fact carries full fact metadata (type, scene, links, path, origin) for
+	// adapters that need more than the default project fact. When set, the
+	// engine writes this fact after name resolution instead of building a
+	// default one. Callers that omit it keep the original behavior.
+	Fact *memory.Fact
 }
 
 // AppendResult is the durable outcome of an append.

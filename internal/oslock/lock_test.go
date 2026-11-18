@@ -6,9 +6,9 @@ package oslock_test
 // audit: seam - the test calls only the public Lock API on a temp-directory file.
 import (
 	"errors"
+	"github.com/dkmnx/recollect/internal/oslock"
 	"os"
 	"path/filepath"
-	"recollect/internal/oslock"
 	"testing"
 	"time"
 )

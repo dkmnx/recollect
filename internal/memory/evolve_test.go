@@ -11,7 +11,7 @@ package memory_test
 import (
 	"testing"
 
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 )
 
 // Test-audit record (test-audit skill):

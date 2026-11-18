@@ -6,11 +6,11 @@ package engine_test
 // audit: seam - the helper is a Go test process using only the public engine API.
 import (
 	"fmt"
+	"github.com/dkmnx/recollect/internal/engine"
+	"github.com/dkmnx/recollect/internal/memory"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"recollect/internal/engine"
-	"recollect/internal/memory"
 	"regexp"
 	"strings"
 	"sync"

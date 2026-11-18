@@ -4,7 +4,7 @@ package memory_test
 // audit: coverage unchanged; no test-only seam introduced.
 
 import (
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 	"strings"
 	"testing"
 )

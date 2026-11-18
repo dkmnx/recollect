@@ -6,9 +6,9 @@ package memory_test
 import (
 	"errors"
 	"fmt"
+	"github.com/dkmnx/recollect/internal/memory"
 	"os"
 	"path/filepath"
-	"recollect/internal/memory"
 	"testing"
 	"time"
 )

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"recollect/internal/fsatomic"
+	"github.com/dkmnx/recollect/internal/fsatomic"
 )
 
 // Options configures a Store. UserDir holds the global user.md and

@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 )
 
 type fakeClock struct {

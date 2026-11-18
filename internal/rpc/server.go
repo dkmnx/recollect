@@ -12,10 +12,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"recollect/internal/engine"
-	"recollect/internal/jobs"
-	"recollect/internal/memory"
-	"recollect/internal/render"
+	"github.com/dkmnx/recollect/internal/engine"
+	"github.com/dkmnx/recollect/internal/jobs"
+	"github.com/dkmnx/recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/render"
 )
 
 // Renderer builds the memory section for one context snapshot.

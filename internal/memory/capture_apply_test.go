@@ -9,7 +9,7 @@ package memory_test
 // audit: seam none; tests drive ParseCaptureResult and ApplyCaptureOp.
 
 import (
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 	"strings"
 	"testing"
 	"time"

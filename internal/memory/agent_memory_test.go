@@ -5,8 +5,8 @@ package memory_test
 
 import (
 	"fmt"
+	"github.com/dkmnx/recollect/internal/memory"
 	"path/filepath"
-	"recollect/internal/memory"
 	"strings"
 	"sync"
 	"testing"

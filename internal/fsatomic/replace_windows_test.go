@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	fsatomic "recollect/internal/fsatomic"
+	fsatomic "github.com/dkmnx/recollect/internal/fsatomic"
 )
 
 // The retry budget is finite, so a destination held open past it must fail

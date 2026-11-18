@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"recollect/internal/memory"
-	"recollect/internal/render"
+	"github.com/dkmnx/recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/render"
 )
 
 func writeMemoryFile(t *testing.T, path, content string) {

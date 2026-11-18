@@ -8,7 +8,7 @@ package memory_test
 // while leaving valid JSON escapes untouched.
 
 import (
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 	"strings"
 	"testing"
 )

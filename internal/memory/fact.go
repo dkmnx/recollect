@@ -156,6 +156,11 @@ func (f Fact) FallbackName() string {
 // one line, an empty type defaults to project, and the name slugs from the
 // given name or the description, falling back to a stable hash of the
 // description when nothing usable remains (non-ASCII descriptions).
+// PrepareForWrite applies the store's write-time normalization to a fact.
+// Adapters that route writes through the engine use it to keep stored facts
+// identical to those written by the store directly.
+func PrepareForWrite(fact Fact) Fact { return prepareFact(fact) }
+
 func prepareFact(fact Fact) Fact {
 	fact.Description = StripPrivateContent(CollapseLine(fact.Description))
 	fact.Type = strings.TrimSpace(fact.Type)

@@ -9,7 +9,7 @@ package memory_test
 // audit: seam none; tests drive ParseCaptureResult and Redact directly.
 
 import (
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 	"strings"
 	"testing"
 )

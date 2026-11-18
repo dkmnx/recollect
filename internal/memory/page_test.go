@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 )
 
 // Test-audit record (test-audit skill):

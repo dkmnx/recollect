@@ -22,9 +22,9 @@ package memory_test
 
 import (
 	"encoding/json"
+	"github.com/dkmnx/recollect/internal/memory"
 	"os"
 	"path/filepath"
-	"recollect/internal/memory"
 	"testing"
 )
 

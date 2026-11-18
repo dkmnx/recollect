@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"recollect/internal/engine"
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/engine"
+	"github.com/dkmnx/recollect/internal/memory"
 )
 
 type executeParams struct {

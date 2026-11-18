@@ -4,9 +4,9 @@ package fsatomic_test
 // audit: coverage unchanged; no test-only seam introduced.
 import (
 	"fmt"
+	"github.com/dkmnx/recollect/internal/fsatomic"
 	"os"
 	"path/filepath"
-	"recollect/internal/fsatomic"
 	"sync"
 	"testing"
 	"time"

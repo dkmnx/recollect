@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 )
 
 // TestSecretHoldback pins the tail length a streamed reader must withhold.

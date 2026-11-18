@@ -3,9 +3,9 @@ package rpc
 import (
 	"errors"
 
-	"recollect/internal/engine"
-	"recollect/internal/jobs"
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/engine"
+	"github.com/dkmnx/recollect/internal/jobs"
+	"github.com/dkmnx/recollect/internal/memory"
 )
 
 // engineFailure maps a stable engine error to a JSON-RPC error.

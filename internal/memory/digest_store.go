@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"recollect/internal/fsatomic"
+	"github.com/dkmnx/recollect/internal/fsatomic"
 )
 
 // The archive bounds. Archived digests are housekeeping copies, not

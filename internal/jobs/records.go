@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 )
 
 // Capture and maintenance thresholds. Manual and automatic sweeps keep the

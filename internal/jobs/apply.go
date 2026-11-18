@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 )
 
 // buildPrompt composes an engine-owned prompt. The model call itself never

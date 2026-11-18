@@ -6,10 +6,10 @@ package engine_test
 // audit: seam - tests use public engine and memory APIs and the documented .engine layout.
 import (
 	"errors"
+	"github.com/dkmnx/recollect/internal/engine"
+	"github.com/dkmnx/recollect/internal/memory"
 	"os"
 	"path/filepath"
-	"recollect/internal/engine"
-	"recollect/internal/memory"
 	"strings"
 	"testing"
 	"time"

@@ -6,10 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dkmnx/recollect/internal/fsatomic"
+	"github.com/dkmnx/recollect/internal/oslock"
 	"os"
 	"path/filepath"
-	"recollect/internal/fsatomic"
-	"recollect/internal/oslock"
 	"time"
 )
 

@@ -1,4 +1,4 @@
-module recollect
+module github.com/dkmnx/recollect
 
 go 1.27.0
 

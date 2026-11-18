@@ -47,9 +47,8 @@ The module is local. It has not been published.
 
 ## Usage
 
-The current packages are internal. Code outside this module cannot import
-them. Put a program under this module, for example `cmd/demo/main.go`, and
-open a store over two directories.
+Import the public facade `github.com/dkmnx/recollect/memory` in your Go
+program. Open a store over two directories.
 
 ```go
 package main
@@ -59,7 +58,7 @@ import (
     "os"
     "path/filepath"
 
-    "recollect/internal/memory"
+    "github.com/dkmnx/recollect/memory"
 )
 
 func main() {

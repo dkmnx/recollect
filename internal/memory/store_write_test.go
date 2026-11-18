@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"recollect/internal/memory"
+	"github.com/dkmnx/recollect/internal/memory"
 )
 
 // TestStoreWriteRidesOutAHeldDestination holds the capture state file open

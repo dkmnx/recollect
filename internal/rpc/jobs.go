@@ -5,8 +5,9 @@ import (
 	"strings"
 	"time"
 
-	"recollect/internal/jobs"
-	"recollect/internal/render"
+	"github.com/dkmnx/recollect/internal/imports"
+	"github.com/dkmnx/recollect/internal/jobs"
+	"github.com/dkmnx/recollect/internal/render"
 )
 
 type contextParams struct {
@@ -133,12 +134,20 @@ type completeParams struct {
 }
 
 type maintenanceParams struct {
-	Action string `json:"action"`
+	Action           string `json:"action"`
+	SourceProjectDir string `json:"sourceProjectDir"`
+	SourceUserDir    string `json:"sourceUserDir"`
+	DryRun           bool   `json:"dryRun"`
 }
 
 type maintenanceResult struct {
 	Action  string `json:"action"`
 	Pending int    `json:"pending"`
+}
+
+type importStatusResult struct {
+	Report imports.Report `json:"report"`
+	Exists bool           `json:"exists"`
 }
 
 func (s *server) maintenanceExecute(req Request) error {
@@ -149,14 +158,49 @@ func (s *server) maintenanceExecute(req Request) error {
 	if strings.TrimSpace(p.Action) == "" {
 		return s.invalid(req.ID, "maintenance action is required")
 	}
-	if p.Action != "status" {
+	switch p.Action {
+	case "status":
+		return s.maintenanceStatus(req, p.Action)
+	case "import":
+		return s.maintenanceImport(req, p)
+	case "import-status":
+		return s.maintenanceImportStatus(req)
+	default:
 		return s.invalid(req.ID, "unsupported maintenance action: "+p.Action)
 	}
+}
+
+func (s *server) maintenanceStatus(req Request, action string) error {
 	pending, err := s.pendingJobs()
 	if err != nil {
 		return s.reply(req.ID, nil, storageFailure(err))
 	}
-	return s.reply(req.ID, maintenanceResult{Action: p.Action, Pending: pending}, nil)
+	return s.reply(req.ID, maintenanceResult{Action: action, Pending: pending}, nil)
+}
+
+func (s *server) maintenanceImport(req Request, p maintenanceParams) error {
+	if strings.TrimSpace(p.SourceProjectDir) == "" || strings.TrimSpace(p.SourceUserDir) == "" {
+		return s.invalid(req.ID, "sourceProjectDir and sourceUserDir are required")
+	}
+	report, err := imports.Run(imports.Options{
+		Source:        imports.Source{ProjectDir: p.SourceProjectDir, UserDir: p.SourceUserDir},
+		Target:        s.deps.Store,
+		TargetDir:     s.bindings.ProjectDir,
+		TargetUserDir: s.bindings.UserDir,
+		DryRun:        p.DryRun,
+	})
+	if err != nil {
+		return s.reply(req.ID, nil, storageFailure(err))
+	}
+	return s.reply(req.ID, report, nil)
+}
+
+func (s *server) maintenanceImportStatus(req Request) error {
+	report, exists, err := imports.Status(s.bindings.ProjectDir)
+	if err != nil {
+		return s.reply(req.ID, nil, storageFailure(err))
+	}
+	return s.reply(req.ID, importStatusResult{Report: report, Exists: exists}, nil)
 }
 
 func (s *server) jobsComplete(req Request) error {
