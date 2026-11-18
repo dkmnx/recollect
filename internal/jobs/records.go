@@ -21,6 +21,8 @@ const (
 	AutomaticCooldown           = 24 * time.Hour
 
 	defaultRetryCooldown  = time.Minute
+	maxRetryCooldown      = 30 * time.Minute
+	maxJobAttempts        = 5
 	captureWindowMessages = 24
 	captureWindowBytes    = 16 * 1024
 )

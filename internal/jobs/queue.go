@@ -223,8 +223,27 @@ func recordsFor(records []HostRecord, boundary RunBoundary) []HostRecord {
 	return out
 }
 
+func captureBoundary(kind string) bool {
+	switch kind {
+	case "complete", "failed", "interrupted", "compaction", "compaction-failed":
+		return true
+	default:
+		return false
+	}
+}
+
 // Ingest turns terminal runs into durable jobs. It never calls the generator.
 func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
+	captures := false
+	for _, boundary := range boundaries {
+		if captureBoundary(boundary.Kind) {
+			captures = true
+			break
+		}
+	}
+	if !captures {
+		return nil
+	}
 	release, err := q.acquire()
 	if err != nil {
 		return err
@@ -281,6 +300,10 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 			Scope:      "project",
 			State:      StatePending,
 		}
+		if !captureBoundary(boundary.Kind) {
+			// Idle boundaries are liveness evidence, not capture triggers.
+			continue
+		}
 		if !boundary.Available {
 			gap := base
 			gap.Kind = KindGap
@@ -291,11 +314,6 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 			if err := add(gap, jobInput{}); err != nil {
 				return err
 			}
-			continue
-		}
-		switch boundary.Kind {
-		case "complete", "failed", "interrupted":
-		default:
 			continue
 		}
 		if trigger == nil {
@@ -411,13 +429,13 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 	return nil
 }
 
-// Next leases the oldest eligible pending job. A nil job means no work is
-// currently available.
+// Next leases the oldest eligible job, including a retry-wait job whose
+// cooldown has elapsed. A nil job means no work is currently available.
 func (q *Queue) Next(harness, lease string) (*Job, error) {
 	return q.NextCapable(harness, lease, true)
 }
 
-// NextCapable leases the oldest pending job the caller can execute. A caller
+// NextCapable leases the oldest eligible job the caller can execute. A caller
 // without generation capability only receives deterministic work.
 func (q *Queue) NextCapable(harness, lease string, generation bool) (*Job, error) {
 	release, err := q.acquire()
@@ -431,8 +449,11 @@ func (q *Queue) NextCapable(harness, lease string, generation bool) (*Job, error
 	if err != nil {
 		return nil, err
 	}
+	if err := q.recoverLocked(jobs, inputs); err != nil {
+		return nil, err
+	}
 	for i := range jobs {
-		if jobs[i].State != StatePending {
+		if jobs[i].State != StatePending && jobs[i].State != StateRetryWait {
 			continue
 		}
 		if jobs[i].HarnessID != harness {
@@ -491,13 +512,8 @@ func (q *Queue) Complete(id, lease, output string) error {
 		return ErrConflict
 	}
 	if err := q.applyOutput(job, input, output); err != nil {
-		job.Attempt++
-		job.State = StateRetryWait
-		job.RetryAt = q.now().Add(defaultRetryCooldown)
-		job.Error = err.Error()
-		job.Lease = ""
-		if err := q.writePairLocked(job, input); err != nil {
-			return err
+		if writeErr := q.scheduleRetryLocked(&job, &input, err.Error()); writeErr != nil {
+			return writeErr
 		}
 		return err
 	}
@@ -507,6 +523,35 @@ func (q *Queue) Complete(id, lease, output string) error {
 	job.State = StateApplied
 	input.LeasedAt = time.Time{}
 	return q.writePairLocked(job, input)
+}
+
+// scheduleRetryLocked records a failed attempt. A cancellation is shutdown
+// bookkeeping, not a job failure, so it releases the job without consuming an
+// attempt. After the cap, a real failure parks in conflict instead of
+// consuming model calls forever.
+func (q *Queue) scheduleRetryLocked(job *Job, input *jobInput, reason string) error {
+	job.Lease = ""
+	job.Error = reason
+	input.LeasedAt = time.Time{}
+	if reason == "cancelled" {
+		job.State = StatePending
+		job.RetryAt = time.Time{}
+		job.Error = ""
+		return q.writePairLocked(*job, *input)
+	}
+	job.Attempt++
+	if job.Attempt >= maxJobAttempts {
+		job.State = StateConflict
+		job.RetryAt = time.Time{}
+		return q.writePairLocked(*job, *input)
+	}
+	job.State = StateRetryWait
+	cooldown := defaultRetryCooldown * time.Duration(job.Attempt)
+	if cooldown > maxRetryCooldown {
+		cooldown = maxRetryCooldown
+	}
+	job.RetryAt = q.now().Add(cooldown)
+	return q.writePairLocked(*job, *input)
 }
 
 // Fail records an attempt and a cooldown. It never advances a capture phase.
@@ -531,13 +576,7 @@ func (q *Queue) Fail(id, lease, reason string) error {
 	if err := checkLease(job, input, lease, q.now()); err != nil {
 		return err
 	}
-	job.Attempt++
-	job.State = StateRetryWait
-	job.RetryAt = q.now().Add(defaultRetryCooldown)
-	job.Error = reason
-	job.Lease = ""
-	input.LeasedAt = time.Time{}
-	return q.writePairLocked(job, input)
+	return q.scheduleRetryLocked(&job, &input, reason)
 }
 
 // Run executes one leased job with the host generator. Deterministic jobs
@@ -579,14 +618,26 @@ func (q *Queue) Recover() error {
 	if err != nil {
 		return err
 	}
+	return q.recoverLocked(jobs, inputs)
+}
+
+// recoverLocked returns expired leases and elapsed cooldowns to pending. The
+// caller holds the queue lock.
+func (q *Queue) recoverLocked(jobs []Job, inputs []jobInput) error {
 	now := q.now()
 	for i := range jobs {
 		changed := false
 		if jobs[i].State == StateLeased && !inputs[i].LeasedAt.IsZero() &&
 			!now.Before(inputs[i].LeasedAt.Add(defaultLeaseTTL)) {
-			jobs[i].State = StatePending
+			jobs[i].Attempt++
 			jobs[i].Lease = ""
 			inputs[i].LeasedAt = time.Time{}
+			if jobs[i].Attempt >= maxJobAttempts {
+				jobs[i].State = StateConflict
+				jobs[i].Error = "lease expired too many times"
+			} else {
+				jobs[i].State = StatePending
+			}
 			changed = true
 		}
 		if jobs[i].State == StateRetryWait && !jobs[i].RetryAt.IsZero() && !now.Before(jobs[i].RetryAt) {

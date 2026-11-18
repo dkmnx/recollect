@@ -400,6 +400,61 @@ func TestModelJobLeasesForHostGeneration(t *testing.T) {
 	}
 }
 
+// audit: behavior - a timed-out job stays pending in status and close reporting.
+// audit: regression - retry-wait work must not disappear while its cooldown runs.
+// audit: coverage gap - the direct queue test does not cross the RPC boundary.
+// audit: seam - the test drives events.ingest, jobs.complete, status.get, and engine.close.
+func TestRetryWaitJobCountsAsPending(t *testing.T) {
+	d := tempDirs(t)
+	c := start(t)
+	defer c.cmd.Process.Kill()
+	initialize(t, c, d, "bound-harness", map[string]int{"major": 1})
+	ok(t, c.call(t, "events.ingest", map[string]any{
+		"records":    []record{{ID: "r1", SessionID: "s1", Generation: "g1", Time: "2026-11-18T00:00:00Z", Role: "user", Text: "hello"}},
+		"boundaries": []boundary{{SessionID: "s1", Generation: "g1", Kind: "complete", Time: "2026-11-18T00:00:01Z", Available: true}},
+	}))
+	raw := ok(t, c.call(t, "jobs.next", map[string]any{"generation": true}))
+	var leased struct {
+		Job   *jobView `json:"job"`
+		Lease string   `json:"lease"`
+	}
+	if err := json.Unmarshal(raw, &leased); err != nil || leased.Job == nil {
+		t.Fatalf("lease: %v %s", err, raw)
+	}
+	ok(t, c.call(t, "jobs.complete", map[string]any{
+		"jobID": leased.Job.ID, "lease": leased.Lease, "failure": "generation_timeout",
+	}))
+
+	statusRaw := ok(t, c.call(t, "status.get", map[string]any{}))
+	var status struct {
+		Pending   int `json:"pending"`
+		Conflicts int `json:"conflicts"`
+	}
+	if err := json.Unmarshal(statusRaw, &status); err != nil {
+		t.Fatal(err)
+	}
+	if status.Pending < 1 || status.Conflicts != 0 {
+		t.Fatalf("status after timeout = %s", statusRaw)
+	}
+
+	closeRaw := ok(t, c.call(t, "engine.close", map[string]any{"deadlineMS": 1000}))
+	var closed struct {
+		Pending []jobView `json:"pending"`
+	}
+	if err := json.Unmarshal(closeRaw, &closed); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, job := range closed.Pending {
+		if job.ID == leased.Job.ID && job.State == "retry_wait" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("retry-wait job missing from close report: %s", closeRaw)
+	}
+}
+
 // audit: behavior - a host without generation capability does not lease model work.
 // audit: regression - such a host would receive a fact job it cannot execute.
 // audit: coverage gap - the generation flag was accepted but never enforced.

@@ -63,7 +63,7 @@ func (s *server) ingest(req Request) error {
 	if err := s.deps.Jobs.Ingest(p.Records, p.Boundaries); err != nil {
 		return s.wrap(req.ID, err, jobsFailure)
 	}
-	pending, err := s.pendingJobs()
+	pending, _, err := s.jobCounts()
 	if err != nil {
 		return s.reply(req.ID, nil, storageFailure(err))
 	}
@@ -171,7 +171,7 @@ func (s *server) maintenanceExecute(req Request) error {
 }
 
 func (s *server) maintenanceStatus(req Request, action string) error {
-	pending, err := s.pendingJobs()
+	pending, _, err := s.jobCounts()
 	if err != nil {
 		return s.reply(req.ID, nil, storageFailure(err))
 	}
@@ -226,6 +226,7 @@ func (s *server) jobsComplete(req Request) error {
 type statusResult struct {
 	Health    string `json:"health"`
 	Pending   int    `json:"pending"`
+	Conflicts int    `json:"conflicts"`
 	LastError string `json:"lastError,omitempty"`
 }
 
@@ -234,28 +235,30 @@ func (s *server) statusGet(req Request) error {
 	if err := s.deps.Store.Ping(); err != nil {
 		health = "storage_failure"
 	}
-	pending, err := s.pendingJobs()
+	pending, conflicts, err := s.jobCounts()
 	if err != nil {
 		return s.reply(req.ID, nil, storageFailure(err))
 	}
-	out := statusResult{Health: health, Pending: pending, LastError: s.lastError}
+	out := statusResult{Health: health, Pending: pending, Conflicts: conflicts, LastError: s.lastError}
 	return s.reply(req.ID, out, nil)
 }
 
-// pendingJobs counts jobs waiting for a lease. A read failure is returned to
-// the caller so zero pending work is never reported during an outage.
-func (s *server) pendingJobs() (int, error) {
+// jobCounts reports pending work and parked conflicts. A read failure is
+// returned to the caller so zero pending work is never reported during an outage.
+func (s *server) jobCounts() (pending, conflicts int, err error) {
 	all, err := s.deps.Jobs.Status()
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	count := 0
 	for _, job := range all {
-		if job.State == jobs.StatePending {
-			count++
+		switch job.State {
+		case jobs.StatePending, jobs.StateRetryWait:
+			pending++
+		case jobs.StateConflict:
+			conflicts++
 		}
 	}
-	return count, nil
+	return pending, conflicts, nil
 }
 
 type closeParams struct {
@@ -289,7 +292,7 @@ func (s *server) engineClose(req Request) error {
 	}
 	out := closeResult{Count: 0, Deadline: p.DeadlineMS, Pending: []jobView{}}
 	for _, job := range all {
-		if job.State == jobs.StatePending {
+		if job.State == jobs.StatePending || job.State == jobs.StateRetryWait {
 			out.Pending = append(out.Pending, viewOf(job))
 		}
 	}

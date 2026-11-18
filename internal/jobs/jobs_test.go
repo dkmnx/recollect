@@ -1,9 +1,12 @@
 package jobs
 
 // audit: behavior Stage 4 ingest produces idempotent fact, digest, revision,
-// consolidation, page, and gap jobs from normalized host records.
+// consolidation, page, and gap jobs from normalized host records; retry-wait
+// jobs become leaseable after their cooldown, cancellations stay retryable,
+// retries park at the attempt cap, compaction captures before the transcript
+// shrinks, and idle creates no work.
 // audit: regression covers lease and input-hash gating, unknown fact types,
-// edit dedupe, fallback digests, and consolidation floors.
+// edit dedupe, fallback digests, retry cooldowns, and consolidation floors.
 // audit: coverage gap E2E Queue API over a real memory.Store and on-disk state.
 // audit: seam none; tests drive Open, Ingest, Next, Complete, Fail, Recover,
 // Status and Run through a scripted host Generator without production hooks.
@@ -697,6 +700,231 @@ func TestTwoProcessesCannotLeaseSameJob(t *testing.T) {
 	}
 	if leased != 1 {
 		t.Fatalf("leased jobs = %d, want exactly one", leased)
+	}
+}
+
+func TestRetryWaitJobBecomesLeaseableAfterCooldown(t *testing.T) {
+	q, _, _, clock := newTestQueue(t, nil)
+	q.SetHarness("opencode")
+	if err := q.Ingest(nil, []RunBoundary{{
+		SessionID: "s1", Generation: "g1", Kind: "complete", Time: clock.Now(), Available: true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	job, err := q.Next("opencode", "lease-1")
+	if err != nil || job == nil {
+		t.Fatalf("first lease: job=%+v err=%v", job, err)
+	}
+	if err := q.Fail(job.ID, "lease-1", "generation_timeout"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := q.Next("opencode", "lease-2"); err != nil || got != nil {
+		t.Fatalf("future retry leased: job=%+v err=%v", got, err)
+	}
+	clock.Advance(2 * time.Minute)
+	got, err := q.Next("opencode", "lease-3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.ID != job.ID || got.State != StateLeased {
+		t.Fatalf("elapsed retry not leased: %+v", got)
+	}
+}
+
+func TestNextRecoversExpiredLease(t *testing.T) {
+	q, _, _, clock := newTestQueue(t, nil)
+	job := Job{
+		ID:        "expired-lease",
+		HarnessID: "opencode",
+		Kind:      KindRevision,
+		State:     StateLeased,
+		Lease:     "old-lease",
+	}
+	q.mu.Lock()
+	err := q.writePairLocked(job, jobInput{LeasedAt: clock.Now()})
+	q.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock.Advance(defaultLeaseTTL + time.Minute)
+	got, err := q.Next("opencode", "lease-new")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || got.ID != job.ID || got.State != StateLeased {
+		t.Fatalf("expired lease not recovered: %+v", got)
+	}
+}
+
+func TestIdleBoundaryCreatesNoWork(t *testing.T) {
+	q, _, _, _ := newTestQueue(t, nil)
+	q.SetHarness("opencode")
+	err := q.Ingest(nil, []RunBoundary{
+		{SessionID: "ses-1", Generation: "g1", Kind: "terminal", Available: false},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := q.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 0 {
+		t.Fatalf("idle boundary created %d jobs: %+v", len(all), all)
+	}
+}
+
+func TestExpiredLeaseParksAtAttemptCap(t *testing.T) {
+	q, _, _, clock := newTestQueue(t, nil)
+	job := Job{
+		ID:        "expired-cap",
+		HarnessID: "opencode",
+		Kind:      KindRevision,
+		State:     StateLeased,
+		Lease:     "lease-0",
+	}
+	q.mu.Lock()
+	err := q.writePairLocked(job, jobInput{LeasedAt: clock.Now()})
+	q.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for attempt := 1; attempt <= maxJobAttempts; attempt++ {
+		clock.Advance(defaultLeaseTTL + time.Minute)
+		leased, err := q.Next("opencode", fmt.Sprintf("lease-%d", attempt))
+		if err != nil {
+			t.Fatalf("attempt %d: %v", attempt, err)
+		}
+		if attempt < maxJobAttempts && (leased == nil || leased.ID != job.ID) {
+			t.Fatalf("attempt %d next: job=%+v", attempt, leased)
+		}
+		if attempt == maxJobAttempts && leased != nil {
+			t.Fatalf("capped job leased again: %+v", leased)
+		}
+	}
+	all, err := q.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].State != StateConflict {
+		t.Fatalf("expired-lease cap state = %+v", all)
+	}
+}
+
+func TestCancelledJobStaysRetryable(t *testing.T) {
+	q, _, _, clock := newTestQueue(t, nil)
+	job := Job{
+		ID:        "cancel-retry",
+		HarnessID: "opencode",
+		Kind:      KindRevision,
+		State:     StateLeased,
+		Lease:     "lease-0",
+	}
+	q.mu.Lock()
+	err := q.writePairLocked(job, jobInput{LeasedAt: clock.Now()})
+	q.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease := "lease-0"
+	for attempt := 1; attempt <= maxJobAttempts; attempt++ {
+		if err := q.Fail(job.ID, lease, "cancelled"); err != nil {
+			t.Fatalf("attempt %d: %v", attempt, err)
+		}
+		clock.Advance(time.Hour)
+		if attempt == maxJobAttempts {
+			break
+		}
+		leased, err := q.Next("opencode", fmt.Sprintf("lease-%d", attempt))
+		if err != nil || leased == nil || leased.ID != job.ID {
+			t.Fatalf("attempt %d next: job=%+v err=%v", attempt, leased, err)
+		}
+		lease = leased.Lease
+	}
+	if got, err := q.Next("opencode", "after-cancel"); err != nil || got == nil || got.ID != job.ID {
+		t.Fatalf("cancelled job is no longer retryable: job=%+v err=%v", got, err)
+	}
+}
+
+func TestCompactionBoundaryCapturesBeforeHistoryChanges(t *testing.T) {
+	q, _, _, clock := newTestQueue(t, nil)
+	q.SetHarness("opencode")
+	records := []HostRecord{{
+		ID: "m1", SessionID: "ses-1", Generation: "g1", Role: "user", Text: "pre-shrink text", Time: clock.Now(),
+	}}
+	if err := q.Ingest(records, []RunBoundary{{
+		SessionID: "ses-1", Generation: "g1", Kind: "compaction", Time: clock.Now(), Available: true,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	factJobs := jobsByKind(t, q, KindFact)
+	if len(factJobs) != 1 {
+		t.Fatalf("compaction fact jobs = %d, want 1", len(factJobs))
+	}
+	_, input, ok, err := q.readPair(factJobs[0].ID)
+	if err != nil || !ok {
+		t.Fatalf("read fact input: ok=%v err=%v", ok, err)
+	}
+	if !strings.Contains(input.Prompt, "pre-shrink text") {
+		t.Fatalf("compaction prompt lost pre-shrink history: %q", input.Prompt)
+	}
+	if got := jobsByKind(t, q, KindDigest); len(got) != 1 {
+		t.Fatalf("compaction digest jobs = %d, want 1", len(got))
+	}
+}
+
+func TestUnavailableCompactionCreatesGap(t *testing.T) {
+	q, _, _, clock := newTestQueue(t, nil)
+	q.SetHarness("opencode")
+	if err := q.Ingest(nil, []RunBoundary{{
+		SessionID: "ses-1", Generation: "g1", Kind: "compaction", Time: clock.Now(), Available: false,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := jobsByKind(t, q, KindGap); len(got) != 1 {
+		t.Fatalf("unavailable compaction gap jobs = %d, want 1", len(got))
+	}
+}
+
+func TestFailParksJobAfterMaxAttempts(t *testing.T) {
+	q, _, _, clock := newTestQueue(t, nil)
+	job := Job{
+		ID:        "retry-cap",
+		HarnessID: "opencode",
+		Kind:      KindRevision,
+		State:     StateLeased,
+		Lease:     "lease-0",
+	}
+	q.mu.Lock()
+	err := q.writePairLocked(job, jobInput{LeasedAt: clock.Now()})
+	q.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	lease := "lease-0"
+	for attempt := 1; attempt <= maxJobAttempts; attempt++ {
+		if err := q.Fail(job.ID, lease, "generation_failed"); err != nil {
+			t.Fatalf("attempt %d: %v", attempt, err)
+		}
+		clock.Advance(time.Hour)
+		if attempt == maxJobAttempts {
+			break
+		}
+		leased, err := q.Next("opencode", fmt.Sprintf("lease-%d", attempt))
+		if err != nil || leased == nil || leased.ID != job.ID {
+			t.Fatalf("attempt %d next: job=%+v err=%v", attempt, leased, err)
+		}
+		lease = leased.Lease
+	}
+	if got, err := q.Next("opencode", "after-cap"); err != nil || got != nil {
+		t.Fatalf("capped job leased again: job=%+v err=%v", got, err)
+	}
+	all, err := q.Status()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 1 || all[0].State != StateConflict {
+		t.Fatalf("capped job state = %+v", all)
 	}
 }
 
