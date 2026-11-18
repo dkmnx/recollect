@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Check gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-formatted:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: Run go vet
+        run: go vet ./...
+      - name: Run tests
+        run: go test ./... -count=1
+      - name: Run race tests
+        run: go test -race ./... -count=1
+      - name: Cross-build linux/amd64
+        run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build ./...
+      - name: Cross-build windows/amd64
+        run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...
+      - name: Run test audit check
+        run: go run ./tools/checktestaudit
+
+  go-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run go vet
+        run: go vet ./...
+      - name: Run tests
+        run: go test ./... -count=1
+      - name: Install MSYS2 MINGW64 gcc
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc
+          path-type: inherit
+      - name: Run race tests with CGO_ENABLED=1 and MSYS2 MINGW64 gcc
+        shell: msys2 {0}
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race ./... -count=1
+
+  adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: adapters/opencode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install adapter dependencies
+        run: bun install --frozen-lockfile
+      # shortcut: typecheck covers the changed modules; widen when the adapter is type-clean.
+      - name: Typecheck changed adapter modules
+        run: bun run typecheck
+      - name: Run adapter tests
+        run: bun test
+
+  static-analysis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Add Go bin to PATH
+        run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Install staticcheck v0.8.2
+        run: go install honnef.co/go/tools/cmd/staticcheck@v0.8.2
+      - name: Install govulncheck v1.10.0
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.10.0
+      - name: Run staticcheck
+        run: staticcheck ./...
+      - name: Run govulncheck
+        run: govulncheck ./...
