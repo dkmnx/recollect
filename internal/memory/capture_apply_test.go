@@ -1,7 +1,12 @@
 package memory_test
 
-// audit: behavior contract preserved from xi; regression cases retained.
-// audit: coverage unchanged; no test-only seam introduced.
+// audit: behavior capture apply preserves unknown fact types instead of
+// relabeling them to project; the five-type vocabulary and all actions hold.
+// audit: regression a writer-side NormalizeFactType collapsing "fact" or
+// "environment" to project silently changes the type of an existing fact.
+// audit: coverage gap the original cases asserted legacy-to-project mapping,
+// so no test saw an unknown type survive parse and apply.
+// audit: seam none; tests drive ParseCaptureResult and ApplyCaptureOp.
 
 import (
 	"recollect/internal/memory"
@@ -56,7 +61,7 @@ func TestApplyCaptureOps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fact.Type != memory.FactTypeProject || fact.OriginSessionID != session {
+	if fact.Type != "fact" || fact.OriginSessionID != session {
 		t.Fatalf("add = %+v", fact)
 	}
 
@@ -122,8 +127,8 @@ func TestCaptureOpsFromPromptShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	fact, err := store.ReadFact("go-version")
-	if err != nil || fact.Type != memory.FactTypeProject {
-		t.Fatalf("legacy type should map to project: %+v (%v)", fact, err)
+	if err != nil || fact.Type != "environment" {
+		t.Fatalf("unknown type should be preserved: %+v (%v)", fact, err)
 	}
 }
 

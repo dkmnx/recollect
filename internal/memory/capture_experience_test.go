@@ -20,15 +20,12 @@ import (
 // learned from and resolve through the store; the experience is searchable
 // under its scene like any fact; and an update whose only change is the
 // type promotes an existing fact to the experience layer.
-// Credible regression: NormalizeFactType's default-to-project branch eating
-// the experience type (the layer silently disappears into project facts),
-// ApplyCaptureOp dropping the links or the scene, the experience becoming
-// invisible to scene-scoped search, or UpsertFact's no-change short-circuit
-// swallowing a type-only update (retry-sticky: capture retries converge to
-// the same no-op, so the promotion never lands).
-// Coverage gap: capture tests exercise only the old four-type vocabulary,
-// and the current normalizer returns project for experience — no existing
-// case can see the layer survive parse, normalize, and apply.
+// Credible regression: ApplyCaptureOp dropping the links or the scene, the
+// experience becoming invisible to scene-scoped search, or UpsertFact's
+// no-change short-circuit swallowing a type-only update (retry-sticky:
+// capture retries converge to the same no-op, so the promotion never lands).
+// Coverage gap: capture tests exercise only the old four-type vocabulary;
+// no other case sees the layer survive parse, normalize, and apply.
 // Seam check: none — the test drives the production pipeline entries the
 // capture coordinator calls (ParseCaptureResult, ApplyCaptureOp) and reads
 // back through the store's ReadFact, ResolveLinks, and SearchFacts.

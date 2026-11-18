@@ -1,0 +1,10 @@
+{
+  "harness": "opencode",
+  "records": [
+    {"id":"g2","sessionID":"sess-gap","generation":"gen-2","time":"2026-11-18T11:02:00Z","role":"user","text":"After the gap we decided to use Postgres."}
+  ],
+  "boundaries": [
+    {"sessionID":"sess-gap","generation":"gen-1","kind":"complete","time":"2026-11-18T11:00:00Z","available":false},
+    {"sessionID":"sess-gap","generation":"gen-2","kind":"complete","time":"2026-11-18T11:03:00Z","available":true}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "harness": "opencode",
+  "records": [
+    {"id":"r1","sessionID":"sess-1","generation":"gen-1","time":"2026-11-18T09:00:00Z","role":"user","text":"We use make check to build this project."},
+    {"id":"r2","sessionID":"sess-1","generation":"gen-1","time":"2026-11-18T09:01:00Z","role":"assistant","text":"Understood."},
+    {"id":"r3","sessionID":"sess-1","generation":"gen-1","time":"2026-11-18T09:02:00Z","role":"user","text":"Always run tests before committing."}
+  ],
+  "boundaries": [
+    {"sessionID":"sess-1","generation":"gen-1","kind":"complete","time":"2026-11-18T09:03:00Z","available":true}
+  ]
+}

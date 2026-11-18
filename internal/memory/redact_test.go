@@ -1,7 +1,12 @@
 package memory_test
 
-// audit: behavior contract preserved from xi; regression cases retained.
-// audit: coverage unchanged; no test-only seam introduced.
+// audit: behavior capture parsing preserves an unknown fact type instead of
+// mapping it to project; code fences, op validation and redaction hold.
+// audit: regression NormalizeFactType collapsing "environment" to project
+// loses the writer's type before a capture result reaches apply.
+// audit: coverage gap the original case asserted legacy-to-project mapping,
+// so no parse test saw an unknown type survive normalization.
+// audit: seam none; tests drive ParseCaptureResult and Redact directly.
 
 import (
 	"recollect/internal/memory"
@@ -37,7 +42,7 @@ func TestParseCaptureResult(t *testing.T) {
 	if len(result.Ops) != 2 {
 		t.Fatalf("ops = %+v", result.Ops)
 	}
-	if result.Ops[0].Key != "build-check" || result.Ops[0].Type != memory.FactTypeProject || result.Ops[0].Content != "Runs vet and race." {
+	if result.Ops[0].Key != "build-check" || result.Ops[0].Type != "environment" || result.Ops[0].Content != "Runs vet and race." {
 		t.Errorf("op 0 = %+v", result.Ops[0])
 	}
 	if result.Ops[1].Action != "correct" || result.Ops[1].Key != "stream-retry" {

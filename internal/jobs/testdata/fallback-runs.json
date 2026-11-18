@@ -1,0 +1,12 @@
+{
+  "harness": "opencode",
+  "records": [
+    {"id":"f1","sessionID":"sess-failed","generation":"gen-f","time":"2026-11-18T10:00:00Z","role":"user","text":"Investigate the flaky test."},
+    {"id":"i1","sessionID":"sess-interrupted","generation":"gen-i","time":"2026-11-18T10:10:00Z","role":"user","text":"We stopped mid-review."},
+    {"id":"i2","sessionID":"sess-interrupted","generation":"gen-i","time":"2026-11-18T10:11:00Z","role":"assistant","text":"Review paused."}
+  ],
+  "boundaries": [
+    {"sessionID":"sess-failed","generation":"gen-f","kind":"failed","time":"2026-11-18T10:01:00Z","available":true},
+    {"sessionID":"sess-interrupted","generation":"gen-i","kind":"interrupted","time":"2026-11-18T10:12:00Z","available":true}
+  ]
+}

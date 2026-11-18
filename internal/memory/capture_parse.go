@@ -114,9 +114,9 @@ func decodeCaptureJSON(payload string, v any) error {
 	}
 }
 
-// normalizeCaptureOp validates one op and normalizes its fields. Legacy
-// type names from the entry format (fact, environment, note) map to the
-// shared project type.
+// normalizeCaptureOp validates one op and normalizes its fields. Unknown
+// non-empty fact types survive in lowercase form; only empty defaults to
+// the shared project type.
 func normalizeCaptureOp(op CaptureOp) (CaptureOp, bool) {
 	op.Action = strings.ToLower(strings.TrimSpace(op.Action))
 	op.Type = NormalizeFactType(op.Type)
@@ -149,15 +149,15 @@ func normalizeCaptureOp(op CaptureOp) (CaptureOp, bool) {
 	return op, true
 }
 
-// NormalizeFactType maps the shared vocabulary plus the legacy entry types
-// (fact, environment, note) onto the canonical set, defaulting to project.
+// NormalizeFactType trims and lowercases a fact type. Known and unknown types
+// are preserved: a writer must not silently relabel an existing or imported
+// type. Only an empty type defaults to project.
 func NormalizeFactType(raw string) string {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case FactTypeUser, FactTypeFeedback, FactTypeReference, FactTypeExperience:
-		return strings.ToLower(strings.TrimSpace(raw))
-	default:
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	if normalized == "" {
 		return FactTypeProject
 	}
+	return normalized
 }
 
 // captureReplyExcerptBytes bounds what the notice shows of a reply that

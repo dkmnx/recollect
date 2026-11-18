@@ -1,0 +1,12 @@
+{
+  "harness": "opencode",
+  "records": [
+    {"id":"e1","sessionID":"sess-edit","generation":"gen-e","time":"2026-11-18T12:00:00Z","role":"assistant","text":"Applied edit.","toolCalls":[{"id":"edit-1","name":"edit","class":"workspace_mutation","arguments":{"file":"main.go"},"outcome":"success","editEvidence":{"path":"main.go","oldString":"v1","newString":"v2"}}]},
+    {"id":"e2","sessionID":"sess-edit","generation":"gen-e","time":"2026-11-18T12:01:00Z","role":"assistant","text":"Repeated edit event.","toolCalls":[{"id":"edit-1","name":"edit","class":"workspace_mutation","arguments":{"file":"main.go"},"outcome":"success","editEvidence":{"path":"main.go","oldString":"v1","newString":"v2"}}]},
+    {"id":"e3","sessionID":"sess-edit","generation":"gen-e","time":"2026-11-18T12:02:00Z","role":"assistant","text":"Failed edit.","toolCalls":[{"id":"edit-2","name":"edit","class":"workspace_mutation","arguments":{"file":"main.go"},"outcome":"failed","editEvidence":{"path":"main.go","oldString":"x","newString":"y"}}]},
+    {"id":"e4","sessionID":"sess-edit","generation":"gen-e","time":"2026-11-18T12:03:00Z","role":"assistant","text":"Unsupported edit evidence.","toolCalls":[{"id":"edit-3","name":"edit","class":"workspace_mutation","arguments":{"file":"main.go"},"outcome":"success","editEvidence":{"unsupported":"shape"}}]}
+  ],
+  "boundaries": [
+    {"sessionID":"sess-edit","generation":"gen-e","kind":"complete","time":"2026-11-18T12:04:00Z","available":true}
+  ]
+}
