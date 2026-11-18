@@ -82,17 +82,53 @@ func TestPageStore(t *testing.T) {
 	_ = projectDir
 }
 
+// audit: behavior - a page goes stale when a cited fact's bytes change, even
+// audit: regression - coarse filesystem mtimes must not hide a source change.
+// audit: coverage gap - timestamp-only staleness is unreliable across platforms.
+// audit: seam - the test writes real page files and sets a future page mtime.
+func TestStalePagesIgnoresCoarseModTimes(t *testing.T) {
+	store, _, projectDir := newTestStore(t, memory.Limits{})
+	if _, err := store.AppendFact(memory.Fact{
+		Name:        "source-fact",
+		Description: "source",
+		Body:        "original",
+	}); err != nil {
+		t.Fatalf("append fact: %v", err)
+	}
+	if _, err := store.UpsertPage(memory.Page{
+		Name:    "conventions",
+		Sources: []string{"source-fact"},
+		Body:    "page body",
+	}); err != nil {
+		t.Fatalf("upsert page: %v", err)
+	}
+	pagePath := filepath.Join(memory.PagesDir(projectDir), "conventions.md")
+	future := time.Now().Add(time.Hour)
+	if err := os.Chtimes(pagePath, future, future); err != nil {
+		t.Fatalf("set page mtime: %v", err)
+	}
+	if _, err := store.UpdateFact("source-fact", "", "changed", nil); err != nil {
+		t.Fatalf("update fact: %v", err)
+	}
+	stale, err := store.StalePages()
+	if err != nil {
+		t.Fatalf("stale pages: %v", err)
+	}
+	if !contains(stale, "conventions") {
+		t.Fatalf("stale = %v, want conventions after source bytes changed", stale)
+	}
+}
+
 // Test-audit record (test-audit skill):
-// Protected behavior: staleness recomputes from disk — every catalog page
+// Protected behavior: staleness recomputes from disk, so every catalog page
 // is stale while missing, a page whose cited facts are older stays fresh,
 // a fact touched or dropped after the page write makes the page stale
 // again, rewriting clears it, and a sourceless page never goes stale.
-// Credible regression: staleness inverted (the sweep rewrites fresh pages
-// forever, or never rewrites a stale one), a dropped cited fact leaving the
-// page fresh, or the stale set escaping the catalog.
-// Coverage gap: no staleness rule exists; nothing else can catch these.
-// Seam check: none — the rule reads only production store state (fact
-// files and page files).
+// Credible regression: staleness inverted, so the sweep rewrites fresh pages
+// forever, or never rewrites a stale one, or a dropped cited fact leaves the
+// page fresh, or the stale set escapes the catalog.
+// Coverage gap: no other rule checks page staleness.
+// Seam check: none. The rule reads only production store state.
 func TestStalePages(t *testing.T) {
 	store, _, _ := newTestStore(t, memory.Limits{})
 

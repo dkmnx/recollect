@@ -6,6 +6,8 @@
 package memory
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -78,6 +80,7 @@ func (s *Store) UpsertPage(page Page) (Page, error) {
 	if prepared.UpdatedOn == "" {
 		prepared.UpdatedOn = s.now().Format(time.DateOnly)
 	}
+	prepared.SourceHashes = s.sourceHashesLocked(prepared.Sources)
 	path := filepath.Join(PagesDir(s.projectDir), prepared.Name+markdownExt)
 	if err := s.writeLocked(path, FormatPage(prepared)); err != nil {
 		return Page{}, err
@@ -122,16 +125,53 @@ func (s *Store) StalePages() ([]string, error) {
 	return append(missing, stale...), nil
 }
 
+func factContentHash(rel string, data []byte) string {
+	sum := sha256.Sum256([]byte(rel + "\x00" + string(data)))
+	return hex.EncodeToString(sum[:])
+}
+
+// sourceHashesLocked records the bytes a page was generated from. Callers
+// hold the lock.
+func (s *Store) sourceHashesLocked(sources []string) []string {
+	hashes := make([]string, 0, len(sources))
+	for _, source := range sources {
+		rel := ""
+		fact, err := s.findFactLocked(FactSlug(source))
+		if err == nil && fact != nil {
+			rel = fact.RelPath()
+		}
+		data, err := os.ReadFile(filepath.Join(s.projectDir, filepath.FromSlash(rel)))
+		if err != nil {
+			hashes = append(hashes, factContentHash(rel, nil))
+			continue
+		}
+		hashes = append(hashes, factContentHash(rel, data))
+	}
+	return hashes
+}
+
 // pageStaleLocked reports whether any cited fact dropped or changed after
-// the page's last write. Callers hold the lock.
+// the page's last write. Callers hold the lock. Recorded hashes take
+// precedence over mtimes, which can lack the resolution to order two writes.
 func (s *Store) pageStaleLocked(page *Page) bool {
 	if len(page.Sources) == 0 {
 		return false
 	}
-	for _, source := range page.Sources {
+	for i, source := range page.Sources {
 		fact, err := s.findFactLocked(FactSlug(source))
 		if err != nil || fact == nil {
 			return true
+		}
+		rel := fact.RelPath()
+		data, readErr := os.ReadFile(filepath.Join(s.projectDir, filepath.FromSlash(rel)))
+		if readErr != nil {
+			return true
+		}
+		if i < len(page.SourceHashes) && page.SourceHashes[i] != "" {
+			if factContentHash(rel, data) != page.SourceHashes[i] {
+				return true
+			}
+			continue
 		}
 		if fact.ModTime.After(page.ModTime) {
 			return true

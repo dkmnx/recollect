@@ -65,11 +65,14 @@ const maxPageBodyBytes = 2 * 1024
 
 // Page is one derived knowledge page.
 type Page struct {
-	Name      string   // catalog slug; the file's base name
-	Question  string   // the standing question the page answers
-	Sources   []string // cited fact names; empty only for hand-written pages
-	UpdatedOn string   // YYYY-MM-DD stamp of the last regeneration
-	Body      string
+	Name     string   // catalog slug; the file's base name
+	Question string   // the standing question the page answers
+	Sources  []string // cited fact names; empty only for hand-written pages
+	// SourceHashes holds one hash per source, in Sources order. It makes
+	// staleness independent of filesystem timestamp resolution.
+	SourceHashes []string
+	UpdatedOn    string // YYYY-MM-DD stamp of the last regeneration
+	Body         string
 	// ModTime is the file's modification time; zero for pages not read from
 	// disk. Staleness compares it against the cited facts' mtimes.
 	ModTime time.Time
@@ -77,6 +80,17 @@ type Page struct {
 
 // ParsePage parses page-file content. Parsing is tolerant: a file without
 // frontmatter takes its question from its first body line.
+func splitPageHashes(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var hashes []string
+	for _, item := range strings.Split(raw, ",") {
+		hashes = append(hashes, strings.TrimSpace(item))
+	}
+	return hashes
+}
+
 func ParsePage(content string) Page {
 	meta, body, ok := splitFrontmatter(NormalizeNewlines(strings.TrimPrefix(content, "\ufeff")))
 	page := Page{Body: strings.Trim(body, "\n")}
@@ -87,6 +101,7 @@ func ParsePage(content string) Page {
 	page.Name = strings.TrimSpace(meta["name"])
 	page.Question = CollapseLine(meta["question"])
 	page.Sources = normalizePageSources(strings.Split(meta["sources"], ","))
+	page.SourceHashes = splitPageHashes(meta["sourceHashes"])
 	page.UpdatedOn = strings.TrimSpace(meta["updatedOn"])
 	return page
 }
@@ -100,6 +115,9 @@ func FormatPage(page Page) string {
 	b.WriteString("question: " + CollapseLine(page.Question) + "\n")
 	if sources := normalizePageSources(page.Sources); len(sources) > 0 {
 		b.WriteString("sources: " + strings.Join(sources, ", ") + "\n")
+	}
+	if len(page.SourceHashes) > 0 {
+		b.WriteString("sourceHashes: " + strings.Join(page.SourceHashes, ", ") + "\n")
 	}
 	b.WriteString("updatedOn: " + strings.TrimSpace(page.UpdatedOn) + "\n")
 	b.WriteString("---\n")
