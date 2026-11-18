@@ -97,17 +97,6 @@ func runImport(t *testing.T, source imports.Source, project, user string, target
 	return report
 }
 
-func mappingFor(t *testing.T, report imports.Report, kind, suffix string) imports.Mapping {
-	t.Helper()
-	for _, mapping := range report.Mappings {
-		if mapping.Kind == kind && strings.HasSuffix(filepath.ToSlash(mapping.From), suffix) {
-			return mapping
-		}
-	}
-	t.Fatalf("no %s mapping ending in %s: %+v", kind, suffix, report.Mappings)
-	return imports.Mapping{}
-}
-
 func listFiles(t *testing.T, root string) []string {
 	t.Helper()
 	var out []string
