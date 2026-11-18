@@ -1,0 +1,13 @@
+{
+  "query": "请用简短的中文答复我",
+  "scene": "",
+  "facts": [
+    {
+      "name": "zh-prefer-concise",
+      "description": "用户偏好简洁中文回答",
+      "body": "回答保持简短"
+    }
+  ],
+  "expect": ["zh-prefer-concise"],
+  "note": "Another Han wording still shares the terms 中文 and 简短 with the fact, so the fact is found."
+}

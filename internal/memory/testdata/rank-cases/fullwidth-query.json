@@ -1,0 +1,18 @@
+{
+  "query": "ｆｕｌｌｗｉｄｔｈ",
+  "scene": "",
+  "facts": [
+    {
+      "name": "en-width-note",
+      "description": "keep the fullwidth word intact",
+      "body": "the note body"
+    },
+    {
+      "name": "en-other-note",
+      "description": "an unrelated note",
+      "body": "other text"
+    }
+  ],
+  "expect": ["en-width-note"],
+  "note": "The query is full-width and the fact is half-width, so the width fold works in both directions."
+}

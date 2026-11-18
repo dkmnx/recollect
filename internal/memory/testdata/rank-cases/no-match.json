@@ -1,0 +1,18 @@
+{
+  "query": "完全无关的词汇",
+  "scene": "",
+  "facts": [
+    {
+      "name": "en-deploy-pipeline",
+      "description": "deploy pipeline notes",
+      "body": "how releases ship"
+    },
+    {
+      "name": "en-editorial",
+      "description": "writing style guide",
+      "body": "keep the sentences short"
+    }
+  ],
+  "expect": [],
+  "note": "A Han query that shares no term with the corpus finds nothing."
+}

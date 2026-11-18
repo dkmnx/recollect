@@ -1,0 +1,2 @@
+- [xi-memory-format-v1](xi-memory-format-v1.md) — xi project memory stores one fact per markdown file with YAML frontmatter
+- [fact-minimal](fact-minimal.md) — Plain note kept by hand.

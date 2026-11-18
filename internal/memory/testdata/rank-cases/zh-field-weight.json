@@ -1,0 +1,18 @@
+{
+  "query": "审批",
+  "scene": "",
+  "facts": [
+    {
+      "name": "zh-approval-flow",
+      "description": "审批流程",
+      "body": ""
+    },
+    {
+      "name": "zh-audit-log",
+      "description": "运行日志",
+      "body": "审批记录、审批台账、审批流程归档"
+    }
+  ],
+  "expect": ["zh-approval-flow", "zh-audit-log"],
+  "note": "A term in the description outranks the same term in the body, even when the body repeats the term. With equal field weights the body fact wins on term frequency and the case fails."
+}

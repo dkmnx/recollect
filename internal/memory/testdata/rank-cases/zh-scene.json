@@ -1,0 +1,20 @@
+{
+  "query": "简洁中文",
+  "scene": "chat",
+  "facts": [
+    {
+      "name": "zh-chat-concise",
+      "description": "用户偏好简洁中文回答",
+      "body": "回答保持简短",
+      "scene": "chat"
+    },
+    {
+      "name": "zh-coding-concise",
+      "description": "用户偏好简洁中文回答",
+      "body": "回答保持简短且完整",
+      "scene": "coding"
+    }
+  ],
+  "expect": ["zh-chat-concise"],
+  "note": "Both facts match the query, and the scene filter drops the coding fact."
+}

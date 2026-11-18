@@ -1,0 +1,13 @@
+{
+  "query": "简洁中文",
+  "scene": "",
+  "facts": [
+    {
+      "name": "zh-prefer-concise",
+      "description": "用户偏好简洁中文回答",
+      "body": "回答保持简短"
+    }
+  ],
+  "expect": ["zh-prefer-concise"],
+  "note": "A Han query shares two-character terms with the fact description, so the fact is found."
+}

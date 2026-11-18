@@ -1,0 +1,13 @@
+{
+  "query": "审批上线流程",
+  "scene": "",
+  "facts": [
+    {
+      "name": "zh-deploy-approval",
+      "description": "部署流程需要审批后才能上线",
+      "body": ""
+    }
+  ],
+  "expect": ["zh-deploy-approval"],
+  "note": "The query shares terms with the fact but no whole phrase, so only the term match finds it."
+}

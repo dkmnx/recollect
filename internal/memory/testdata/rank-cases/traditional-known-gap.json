@@ -1,0 +1,13 @@
+{
+  "query": "設定寫在設定檔案裡",
+  "scene": "",
+  "facts": [
+    {
+      "name": "zh-config-location",
+      "description": "设置写在配置文件里",
+      "body": "路径记录"
+    }
+  ],
+  "expect": [],
+  "note": "No traditional-to-simplified map exists yet, so the traditional query shares no two-character term with the simplified fact and finds nothing."
+}

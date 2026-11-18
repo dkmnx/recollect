@@ -1,0 +1,18 @@
+{
+  "query": "deploy　pipeline",
+  "scene": "",
+  "facts": [
+    {
+      "name": "en-deploy-phrase",
+      "description": "deploy pipeline",
+      "body": ""
+    },
+    {
+      "name": "en-deploy-order",
+      "description": "pipeline deploy",
+      "body": ""
+    }
+  ],
+  "expect": ["en-deploy-phrase", "en-deploy-order"],
+  "note": "The query separates the two words with the ideographic space U+3000 and the fact uses a plain space. Only the space fold makes the phrase match, and the phrase bonus puts that fact first. Without the fold the scores tie and the name order would put the second fact first."
+}
