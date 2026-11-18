@@ -1,0 +1,22 @@
+{
+  "name": "opencode-recollect",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "OpenCode adapter for the Recollect memory engine",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "peerDependencies": {
+    "@opencode/plugin": ">=2.3.0",
+    "effect": ">=4.0.1"
+  },
+  "scripts": {
+    "test": "bun test"
+  },
+  "devDependencies": {
+    "effect": "4.0.1"
+  }
+}

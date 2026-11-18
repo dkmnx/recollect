@@ -35,21 +35,23 @@ const (
 
 // Job is one durable unit of capture or maintenance work.
 type Job struct {
-	ID         string
-	Kind       Kind
-	HarnessID  string
-	SessionID  string
-	Generation string
-	Phase      string
-	Scope      string
-	State      State
-	Lease      string
-	InputHash  string
-	Attempt    int
-	RetryAt    time.Time
-	Output     string
-	Error      string
-	RequestID  string
+	ID            string
+	Kind          Kind
+	HarnessID     string
+	SessionID     string
+	Generation    string
+	Phase         string
+	Scope         string
+	State         State
+	Lease         string
+	InputHash     string
+	Attempt       int
+	RetryAt       time.Time
+	Output        string
+	Error         string
+	RequestID     string
+	Prompt        string `json:"prompt,omitempty"`
+	Deterministic bool   `json:"deterministic"`
 }
 
 // HostRecord is one normalized transcript record from an adapter.

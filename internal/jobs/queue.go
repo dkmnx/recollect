@@ -414,6 +414,12 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 // Next leases the oldest eligible pending job. A nil job means no work is
 // currently available.
 func (q *Queue) Next(harness, lease string) (*Job, error) {
+	return q.NextCapable(harness, lease, true)
+}
+
+// NextCapable leases the oldest pending job the caller can execute. A caller
+// without generation capability only receives deterministic work.
+func (q *Queue) NextCapable(harness, lease string, generation bool) (*Job, error) {
 	release, err := q.acquire()
 	if err != nil {
 		return nil, err
@@ -432,7 +438,7 @@ func (q *Queue) Next(harness, lease string) (*Job, error) {
 		if jobs[i].HarnessID != harness {
 			continue
 		}
-		if q.generate == nil && !deterministicJob(jobs[i], inputs[i]) {
+		if !deterministicJob(jobs[i], inputs[i]) && (!generation || q.generate == nil) {
 			continue
 		}
 		if !jobs[i].RetryAt.IsZero() && q.now().Before(jobs[i].RetryAt) {
@@ -440,6 +446,8 @@ func (q *Queue) Next(harness, lease string) (*Job, error) {
 		}
 		jobs[i].State = StateLeased
 		jobs[i].Lease = lease
+		jobs[i].Prompt = inputs[i].Prompt
+		jobs[i].Deterministic = deterministicJob(jobs[i], inputs[i])
 		inputs[i].LeasedAt = q.now()
 		if err := q.writePairLocked(jobs[i], inputs[i]); err != nil {
 			return nil, err
