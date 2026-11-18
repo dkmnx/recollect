@@ -1,7 +1,7 @@
-// audit: behavior - Normalizes host messages into HostRecord and drops synthetic control text.
-// audit: regression - Memory context and system text must never become user-authored facts.
-// audit: coverage - Covers stable IDs, roles, parts, and unavailable history boundaries.
-// audit: seam - Pure normalization functions sit at the host-event to engine-record seam.
+// audit: behavior - Normalizes host records, maps compaction and idle boundaries, retries a failed ingest, and resubscribes after failure.
+// audit: regression - Memory context, system text, dropped stream errors, and dead transports must not lose events or spin forever.
+// audit: coverage - Covers normalization, compaction kinds, idle status and history skip, pending-ingest retry before resubscribe, and a dead-client stop; not repeated failures.
+// audit: seam - Pure normalization plus a fake Effect stream sit at the host-event to engine-record seam.
 
 import { describe, expect, test } from "bun:test";
 import { Effect, Fiber, Stream } from "effect";
@@ -24,6 +24,10 @@ describe("subscribeEvents", () => {
     expect(fiber).toBeDefined();
     await Effect.runPromise(Fiber.interrupt(fiber));
     expect(types).toContain("session.execution.succeeded");
+    expect(types).toContain("session.compaction.started");
+    expect(types).toContain("session.compaction.failed");
+    expect(types).toContain("session.idle");
+    expect(types).toContain("session.status");
     expect(types).not.toContain("message.updated");
   });
   test("reads terminal session IDs from the host data field", async () => {
@@ -63,6 +67,171 @@ describe("subscribeEvents", () => {
     expect(seen[0].boundaries[0].kind).toBe("complete");
     expect(seen[0].records).toHaveLength(1);
     expect(seen[0].records[0].id).toBe("m1");
+  });
+
+  test("maps compaction start and failure to distinct boundary kinds", async () => {
+    const seen: any[] = [];
+    const ctx = {
+      event: {
+        subscribe: () =>
+          Stream.make(
+            { type: "session.compaction.started", properties: { sessionID: "s1" } },
+            { type: "session.compaction.failed", properties: { sessionID: "s1" } },
+          ),
+      },
+      session: {
+        context: () => Effect.succeed([
+          { id: "m1", sessionID: "s1", role: "user", text: "pre-shrink history" },
+        ]),
+      },
+    };
+    const client = { eventsIngest: async (params: any) => { seen.push(params); return {}; } };
+    const fiber = await Effect.runPromise(subscribeEvents(ctx as any, client));
+    await Effect.runPromise(Fiber.join(fiber));
+
+    expect(seen.map((entry) => entry.boundaries[0].kind)).toEqual(["compaction", "compaction-failed"]);
+    expect(seen[0].records[0].text).toBe("pre-shrink history");
+    expect(seen[0].boundaries[0].available).toBe(true);
+  });
+
+  test("maps a session.status idle event to a terminal boundary", async () => {
+    const seen: any[] = [];
+    const ctx = {
+      event: {
+        subscribe: () => Stream.succeed({
+          type: "session.status",
+          properties: { sessionID: "s1", status: { type: "idle" } },
+        }),
+      },
+      session: { context: () => Effect.succeed([]) },
+    };
+    const client = { eventsIngest: async (params: any) => { seen.push(params); return {}; } };
+    const fiber = await Effect.runPromise(subscribeEvents(ctx as any, client));
+    await Effect.runPromise(Fiber.join(fiber));
+
+    expect(seen[0].boundaries[0].kind).toBe("terminal");
+  });
+
+  test("does not read history for an idle boundary", async () => {
+    let contextReads = 0;
+    const ctx = {
+      event: {
+        subscribe: () => Stream.succeed({ type: "session.idle", properties: { sessionID: "s1" } }),
+      },
+      session: {
+        context: () => {
+          contextReads += 1;
+          return Effect.succeed([]);
+        },
+      },
+    };
+    const client = { eventsIngest: async () => ({}) };
+    const fiber = await Effect.runPromise(subscribeEvents(ctx as any, client));
+    await Effect.runPromise(Fiber.join(fiber));
+
+    expect(contextReads).toBe(0);
+  });
+
+  test("resubscribes after a stream failure and keeps ingesting", async () => {
+    let subscriptions = 0;
+    const ctx = {
+      event: {
+        subscribe: () => {
+          subscriptions += 1;
+          return subscriptions === 1
+            ? Stream.fail(new Error("event stream broke"))
+            : Stream.succeed({ type: "session.idle", properties: { sessionID: "ses-retry" } });
+        },
+      },
+      session: { context: () => Effect.succeed([]) },
+    };
+    const seen: any[] = [];
+    const client = { eventsIngest: async (params: any) => { seen.push(params); return {}; } };
+    const fiber = await Effect.runPromise(subscribeEvents(ctx as any, client, { retryDelayMs: 1 }));
+    await Effect.runPromise(Fiber.join(fiber));
+
+    expect(subscriptions).toBe(2);
+    expect(seen).toHaveLength(1);
+    expect(seen[0].boundaries[0].sessionID).toBe("ses-retry");
+  });
+
+  test("resubscribes after a handler error and keeps ingesting", async () => {
+    let subscriptions = 0;
+    let ingests = 0;
+    const ctx = {
+      event: {
+        subscribe: () => {
+          subscriptions += 1;
+          return Stream.succeed({ type: "session.idle", properties: { sessionID: `ses-${subscriptions}` } });
+        },
+      },
+      session: { context: () => Effect.succeed([]) },
+    };
+    const seen: any[] = [];
+    const client = {
+      eventsIngest: async (params: any) => {
+        ingests += 1;
+        if (ingests === 1) throw new Error("ingest failed");
+        seen.push(params);
+        return {};
+      },
+    };
+    const fiber = await Effect.runPromise(subscribeEvents(ctx as any, client, { retryDelayMs: 1 }));
+    await Effect.runPromise(Fiber.join(fiber));
+
+    expect(subscriptions).toBe(2);
+    expect(seen).toHaveLength(2);
+    expect(seen[0].boundaries[0].sessionID).toBe("ses-1");
+    expect(seen[1].boundaries[0].sessionID).toBe("ses-2");
+  });
+
+  test("flushes a failed ingest before the next subscription", async () => {
+    let subscriptions = 0;
+    const calls: any[] = [];
+    const ctx = {
+      event: {
+        subscribe: () => {
+          subscriptions += 1;
+          return subscriptions === 1
+            ? Stream.succeed({ type: "session.idle", properties: { sessionID: "ses-pending" } })
+            : Stream.empty;
+        },
+      },
+      session: { context: () => Effect.succeed([]) },
+    };
+    const client = {
+      eventsIngest: async (params: any) => {
+        calls.push(params);
+        if (calls.length === 1) throw new Error("ingest failed");
+        return {};
+      },
+    };
+    const fiber = await Effect.runPromise(subscribeEvents(ctx as any, client, { retryDelayMs: 1 }));
+    await Effect.runPromise(Fiber.join(fiber));
+
+    expect(subscriptions).toBe(2);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toEqual(calls[0]);
+  });
+
+  test("stops resubscribing when the client transport is dead", async () => {
+    let subscriptions = 0;
+    const ctx = {
+      event: {
+        subscribe: () => {
+          subscriptions += 1;
+          return Stream.fail(new Error("engine exited"));
+        },
+      },
+      session: { context: () => Effect.succeed([]) },
+    };
+    const client = {
+      eventsIngest: async () => { throw new Error("engine exited"); },
+      isDead: () => true,
+    };
+    const fiber = await Effect.runPromise(subscribeEvents(ctx as any, client, { retryDelayMs: 1 }));
+    await Effect.runPromise(Fiber.join(fiber));
+    expect(subscriptions).toBe(1);
   });
 });
 

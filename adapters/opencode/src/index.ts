@@ -8,7 +8,17 @@ import { registerMemoryTool } from "./tools.js";
 import { registerContext } from "./context.js";
 import { registerCommands } from "./commands.js";
 import { subscribeEvents } from "./events.js";
-import { startWorker, type Generate } from "./worker.js";
+import { runGeneration, startWorker, type Generate } from "./worker.js";
+
+function bounded(promise: Promise<unknown>, ms: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    promise.then(
+      () => { clearTimeout(timer); resolve(); },
+      () => { clearTimeout(timer); resolve(); },
+    );
+  });
+}
 
 export const RecollectPlugin = Plugin.define({
   id: "recollect",
@@ -23,11 +33,8 @@ export const RecollectPlugin = Plugin.define({
       const client = createRpcClient(config.binaryPath);
       yield* Effect.addFinalizer(() =>
         Effect.promise(async () => {
-          try {
-            await client.engineClose({ deadlineMS: 5000 });
-          } catch {
-            // A closed or busy engine still releases the child here.
-          }
+          // A closed, busy, or dead engine still releases the child here.
+          await bounded(client.engineClose({ deadlineMS: 5000 }), 6000);
           client.dispose();
         }),
       );
@@ -50,17 +57,14 @@ export const RecollectPlugin = Plugin.define({
       const generateText = ctx.experimental?.generate?.text;
       const generation = typeof generateText === "function";
       const generate: Generate | null = generation
-        ? async (prompt) => {
-            const result = await generateText.call(ctx.experimental.generate, { prompt });
-            return typeof result === "string" ? result : (result?.text ?? "");
-          }
+        ? (prompt, signal) => runGeneration(() => generateText.call(ctx.experimental.generate, { prompt }), signal)
         : null;
 
       const worker = startWorker(client, generate, { generation, signal: controller.signal });
       yield* Effect.addFinalizer(() =>
-        Effect.sync(() => {
+        Effect.promise(async () => {
           controller.abort();
-          worker.stop();
+          await bounded(worker.stop(), 5000);
         }),
       );
 

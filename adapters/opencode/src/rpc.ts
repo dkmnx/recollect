@@ -12,6 +12,7 @@ export const ErrorCode = {
   Busy: -32004,
   Conflict: -32005,
   Storage: -32006,
+  Transport: -32007,
 } as const;
 
 export class RpcError extends Error {
@@ -30,6 +31,7 @@ export interface Carrier {
   onFrame(listener: (line: string) => void): () => void;
   onDiagnostic?(listener: (line: string) => void): () => void;
   onError?(listener: (error: Error) => void): () => void;
+  onExit?(listener: (error: Error) => void): () => void;
   dispose(): void;
 }
 
@@ -39,6 +41,7 @@ export class RpcClient {
   private nextID = 1;
   private readonly pending = new Map<number, Pending>();
   private readonly unsubscribes: Array<() => void> = [];
+  private failure: Error | null = null;
   lastDiagnostic = "";
 
   constructor(private readonly carrier: Carrier) {
@@ -50,6 +53,9 @@ export class RpcClient {
     }
     if (carrier.onError) {
       this.unsubscribes.push(carrier.onError((error) => this.failAll(error)));
+    }
+    if (carrier.onExit) {
+      this.unsubscribes.push(carrier.onExit((error) => this.failAll(error)));
     }
   }
 
@@ -75,11 +81,18 @@ export class RpcClient {
   }
 
   private failAll(error: Error): void {
+    this.failure = error;
     for (const waiting of this.pending.values()) waiting.reject(error);
     this.pending.clear();
   }
 
+  isDead(): boolean {
+    return this.failure !== null;
+  }
+
   request(method: string, params: unknown = {}): Promise<any> {
+    if (this.failure) return Promise.reject(this.failure);
+
     const id = this.nextID++;
     const frame = JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n";
     return new Promise((resolve, reject) => {
@@ -115,7 +128,16 @@ export function spawnCarrier(binaryPath: string): Carrier {
   const frameListeners = new Set<(line: string) => void>();
   const diagListeners = new Set<(line: string) => void>();
   const errorListeners = new Set<(error: Error) => void>();
+  const exitListeners = new Set<(error: Error) => void>();
   let stdoutBuffer = "";
+  let transportFailure: Error | null = null;
+
+  const notifyFailure = (error: Error) => {
+    if (transportFailure) return;
+    transportFailure = error;
+    for (const listener of errorListeners) listener(error);
+    for (const listener of exitListeners) listener(error);
+  };
 
   child.stdout.setEncoding("utf8");
   child.stdout.on("data", (chunk: string) => {
@@ -129,21 +151,54 @@ export function spawnCarrier(binaryPath: string): Carrier {
     }
   });
 
+  child.stdout.on("error", (error: Error) => {
+    notifyFailure(new RpcError(ErrorCode.Transport, `engine stdout failed: ${error.message}`));
+  });
+
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string) => {
     for (const listener of diagListeners) listener(chunk);
     process.stderr.write(chunk);
   });
+  child.stderr.on("error", () => {
+    // Diagnostics are best effort; a broken stderr pipe does not stop the protocol.
+  });
 
   child.on("error", (error: Error) => {
-    for (const listener of errorListeners) listener(error);
+    notifyFailure(new RpcError(ErrorCode.Transport, `engine process failed: ${error.message}`));
+  });
+
+  // close fires after the stdio pipes drain, so a final reply is not lost.
+  child.on("close", () => {
+    notifyFailure(new RpcError(ErrorCode.Transport, "engine process exited"));
+  });
+
+  child.stdin.on("error", (error: NodeJS.ErrnoException) => {
+    const message = error.code === "EPIPE"
+      ? "engine process stdin closed (EPIPE)"
+      : "engine process stdin failed";
+    notifyFailure(new RpcError(ErrorCode.Transport, message));
   });
 
   return {
-    send(line) { child.stdin.write(line); },
+    send(line) {
+      if (transportFailure) throw transportFailure;
+      if (child.exitCode !== null || !child.stdin.writable) {
+        throw new RpcError(ErrorCode.Transport, "engine process exited");
+      }
+      child.stdin.write(line);
+    },
     onFrame(listener) { frameListeners.add(listener); return () => frameListeners.delete(listener); },
     onDiagnostic(listener) { diagListeners.add(listener); return () => diagListeners.delete(listener); },
     onError(listener) { errorListeners.add(listener); return () => errorListeners.delete(listener); },
+    onExit(listener) {
+      if (transportFailure) {
+        listener(transportFailure);
+        return () => {};
+      }
+      exitListeners.add(listener);
+      return () => exitListeners.delete(listener);
+    },
     dispose() { child.kill(); },
   };
 }

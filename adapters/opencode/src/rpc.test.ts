@@ -1,10 +1,10 @@
-// audit: behavior - Frames newline JSON-RPC requests, correlates replies, maps stable error codes.
-// audit: regression - Out-of-order replies and engine error codes must not resolve wrong promises.
-// audit: coverage - Covers the stdio framing seam with a fake child process, not a real engine.
-// audit: seam - The Carrier boundary stands in for node:child_process stdio.
+// audit: behavior - Frames JSON-RPC requests, maps stable error codes, and fails requests when the child dies.
+// audit: regression - Out-of-order replies and a dead engine must not resolve or hang requests.
+// audit: coverage - Covers fake-carrier exit events and one real short-lived process, not a full engine.
+// audit: seam - The Carrier boundary and node:child_process stand in for engine stdio.
 
 import { describe, expect, test } from "bun:test";
-import { ErrorCode, RpcClient, RpcError, type Carrier } from "./rpc";
+import { ErrorCode, RpcClient, RpcError, spawnCarrier, type Carrier } from "./rpc";
 
 class FakeChildProcess implements Carrier {
   raw: string[] = [];
@@ -12,6 +12,8 @@ class FakeChildProcess implements Carrier {
   diagnostics: string[] = [];
   private frameListeners = new Set<(line: string) => void>();
   private diagListeners = new Set<(line: string) => void>();
+  private errorListeners = new Set<(error: Error) => void>();
+  private exitListeners = new Set<(error: Error) => void>();
 
   send(line: string): void {
     this.raw.push(line);
@@ -25,6 +27,14 @@ class FakeChildProcess implements Carrier {
     this.diagListeners.add(listener);
     return () => this.diagListeners.delete(listener);
   }
+  onError(listener: (error: Error) => void): () => void {
+    this.errorListeners.add(listener);
+    return () => this.errorListeners.delete(listener);
+  }
+  onExit(listener: (error: Error) => void): () => void {
+    this.exitListeners.add(listener);
+    return () => this.exitListeners.delete(listener);
+  }
   dispose(): void {}
   emit(line: string): void {
     for (const listener of this.frameListeners) listener(line);
@@ -32,9 +42,25 @@ class FakeChildProcess implements Carrier {
   emitDiagnostic(line: string): void {
     for (const listener of this.diagListeners) listener(line);
   }
+  emitError(error: Error): void {
+    for (const listener of this.errorListeners) listener(error);
+  }
+  emitExit(error: Error): void {
+    for (const listener of this.exitListeners) listener(error);
+  }
   reply(id: unknown, payload: Record<string, unknown>): void {
     this.emit(JSON.stringify({ jsonrpc: "2.0", id, ...payload }) + "\n");
   }
+}
+
+function settleWithin<T>(promise: Promise<T>, ms: number): Promise<T | "timeout"> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve("timeout"), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (error) => { clearTimeout(timer); reject(error); },
+    );
+  });
 }
 
 describe("RpcClient framing", () => {
@@ -72,6 +98,7 @@ describe("RpcClient framing", () => {
     expect(ErrorCode.Busy).toBe(-32004);
     expect(ErrorCode.Conflict).toBe(-32005);
     expect(ErrorCode.Storage).toBe(-32006);
+    expect(ErrorCode.Transport).toBe(-32007);
     expect(ErrorCode.InvalidParams).toBe(-32602);
     expect(ErrorCode.Protocol).toBe(-32001);
   });
@@ -123,5 +150,53 @@ describe("RpcClient framing", () => {
       expect(child.frames.at(-1)!.method).toBe(method);
     }
     client.dispose();
+  });
+});
+
+describe("RpcClient child death", () => {
+  test("rejects a pending request when the child exits", async () => {
+    const child = new FakeChildProcess();
+    const client = new RpcClient(child);
+    const pending = client.statusGet().then(() => null, (error) => error);
+    child.emitExit(new RpcError(ErrorCode.Transport, "engine process exited"));
+
+    const error = await settleWithin(pending, 1000);
+    expect(error).toBeInstanceOf(RpcError);
+    expect((error as RpcError).code).toBe(ErrorCode.Transport);
+    expect((error as RpcError).message).toBe("engine process exited");
+    client.dispose();
+  });
+
+  test("rejects every request immediately after a transport failure", async () => {
+    const child = new FakeChildProcess();
+    const client = new RpcClient(child);
+    child.emitError(new RpcError(ErrorCode.Transport, "engine process exited"));
+
+    expect(child.frames).toHaveLength(0);
+    const error = await settleWithin(client.statusGet().then(() => null, (failure) => failure), 1000);
+    expect(error).toBeInstanceOf(RpcError);
+    expect((error as RpcError).code).toBe(ErrorCode.Transport);
+    expect(child.frames).toHaveLength(0);
+    client.dispose();
+  });
+
+  test("rejects after a real short-lived child exits without hanging", async () => {
+    const command = process.platform === "win32" ? "where.exe" : "true";
+    const carrier = spawnCarrier(command);
+    let exited = false;
+    await settleWithin(
+      new Promise<void>((resolve) => {
+        carrier.onExit?.(() => { exited = true; resolve(); });
+      }),
+      2000,
+    );
+
+    const client = new RpcClient(carrier);
+    const error = await settleWithin(client.statusGet().then(() => null, (failure) => failure), 1000);
+    client.dispose();
+
+    expect(exited).toBe(true);
+    expect(error).toBeInstanceOf(RpcError);
+    expect((error as RpcError).code).toBe(ErrorCode.Transport);
   });
 });

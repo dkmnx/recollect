@@ -16,7 +16,7 @@ export function registerCommands(
         description: "Show Recollect memory health and pending work.",
         execute: async () => {
           const status = await client.statusGet({});
-          return `Recollect: ${status.health}; pending ${status.pending ?? 0}`;
+          return `Recollect: ${status.health}; pending ${status.pending ?? 0}; conflicts ${status.conflicts ?? 0}`;
         },
       });
 

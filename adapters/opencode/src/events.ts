@@ -1,8 +1,24 @@
 // Converts host events into durable engine records and run boundaries.
 
-import { Effect, Fiber, Stream } from "effect";
+import { Cause, Effect, Exit, Fiber, Stream } from "effect";
 
 export const MEMORY_MARKER = "<!-- recollect:memory:";
+
+const EVENT_TYPES = [
+  "session.execution.succeeded",
+  "session.execution.failed",
+  "session.execution.interrupted",
+  "session.compaction.started",
+  "session.compaction.failed",
+  "session.idle",
+  "session.status",
+];
+
+const RETRY_DELAY_MS = 1_000;
+
+export interface SubscribeOptions {
+  retryDelayMs?: number;
+}
 
 export interface HostRecord {
   id: string;
@@ -87,6 +103,14 @@ function messageFromEvent(event: any): any | null {
 function boundaryFromEvent(event: any): { sessionID: string; generation?: string; kind: string } | null {
   const type = String(event?.type ?? "");
   const props = event?.data ?? event?.properties ?? {};
+  if (type === "session.status") {
+    if (props.status?.type !== "idle") return null;
+    return { sessionID: props.sessionID ?? props.info?.sessionID ?? "", kind: "terminal" };
+  }
+  if (type === "session.compaction.started" || type === "session.compaction.failed") {
+    const kind = type === "session.compaction.failed" ? "compaction-failed" : "compaction";
+    return { sessionID: props.sessionID ?? "", kind, generation: props.generation };
+  }
   if (/(succeeded|failed|idle|interrupted)$/.test(type)) {
     const kind = type.endsWith(".succeeded") ? "complete"
       : type.endsWith(".failed") ? "failed"
@@ -94,16 +118,31 @@ function boundaryFromEvent(event: any): { sessionID: string; generation?: string
       : "terminal";
     return { sessionID: props.sessionID ?? props.info?.sessionID ?? "", kind };
   }
-  if (type.includes("compact")) {
-    return { sessionID: props.sessionID ?? "", kind: "compaction", generation: props.generation };
-  }
   return null;
+}
+
+function diagnosticLine(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return `recollect: event stream failed, retrying: ${message.replace(/\s+/g, " ").trim()}\n`;
 }
 
 export function subscribeEvents(
   ctx: any,
-  client: { eventsIngest(params: unknown): Promise<any> },
-): Effect.Effect<Fiber.RuntimeFiber<void, unknown>> {
+  client: { eventsIngest(params: unknown): Promise<any>; isDead?(): boolean },
+  options: SubscribeOptions = {},
+): Effect.Effect<Fiber.Fiber<void, unknown>> {
+  const retryDelayMs = options.retryDelayMs ?? RETRY_DELAY_MS;
+  const pending: Array<{ records: HostRecord[]; boundaries: RunBoundary[] }> = [];
+
+  // A failed ingest stays pending until a later subscription flushes it.
+  const flush = (): Effect.Effect<void, unknown> =>
+    Effect.gen(function* () {
+      while (pending.length) {
+        yield* Effect.promise(() => client.eventsIngest(pending[0]));
+        pending.shift();
+      }
+    });
+
   const handle = (event: any) =>
     Effect.gen(function* () {
       const records: HostRecord[] = [];
@@ -115,17 +154,21 @@ export function subscribeEvents(
       }
       const boundary = boundaryFromEvent(event);
       if (boundary) {
-        const operation = ctx.session.context({ sessionID: boundary.sessionID });
-        const history = yield* Effect.promise(async () => {
-          try {
-            const value = operation && typeof operation.pipe === "function"
-              ? await Effect.runPromise(operation)
-              : await operation;
-            return Array.isArray(value) ? value : [];
-          } catch {
-            return [];
-          }
-        });
+        // An idle boundary is a liveness signal, not a capture trigger; reading
+        // the full history on every turn would add cost with no engine job.
+        const history = boundary.kind === "terminal"
+          ? []
+          : yield* Effect.promise(async () => {
+              const operation = ctx.session.context({ sessionID: boundary.sessionID });
+              try {
+                const value = operation && typeof operation.pipe === "function"
+                  ? await Effect.runPromise(operation)
+                  : await operation;
+                return Array.isArray(value) ? value : [];
+              } catch {
+                return [];
+              }
+            });
         for (const message of history) {
           const record = normalizeMessage(message);
           if (!record) continue;
@@ -136,14 +179,35 @@ export function subscribeEvents(
         boundaries.push(normalizeBoundary(boundary, history.length > 0));
       }
       if (records.length || boundaries.length) {
-        yield* Effect.promise(() => client.eventsIngest({ records, boundaries }));
+        pending.push({ records, boundaries });
+        yield* flush();
+      }
+    });
+
+  const consume = (): Effect.Effect<void, unknown> =>
+    Effect.gen(function* () {
+      yield* flush();
+      const stream: Stream.Stream<any, unknown> = ctx.event.subscribe({ types: [...EVENT_TYPES] });
+      yield* Stream.runForEach(stream, handle);
+    });
+
+  const supervise = (): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      let delay = retryDelayMs;
+      while (true) {
+        const exit = yield* Effect.exit(consume());
+        if (Exit.isSuccess(exit)) return;
+        if (client.isDead?.() === true) {
+          process.stderr.write("recollect: engine transport closed; event capture stopped\n");
+          return;
+        }
+        process.stderr.write(diagnosticLine(Cause.squash(exit.cause)));
+        yield* Effect.sleep(delay);
+        delay = Math.min(delay * 2, 30_000);
       }
     });
 
   return Effect.gen(function* () {
-    const stream = ctx.event.subscribe({
-      types: ["session.execution.succeeded", "session.execution.failed", "session.execution.interrupted"],
-    });
-    return Effect.runFork(Stream.runForEach(stream, handle));
+    return Effect.runFork(supervise());
   });
 }

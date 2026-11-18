@@ -14,9 +14,12 @@
     "effect": ">=4.0.1"
   },
   "scripts": {
-    "test": "bun test"
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "effect": "4.0.1"
+    "@types/node": "26.6.6",
+    "effect": "4.0.1",
+    "typescript": "7.0.2"
   }
 }
