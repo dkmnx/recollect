@@ -10,6 +10,13 @@ import (
 	"github.com/dkmnx/recollect/internal/render"
 )
 
+var knownFailureCodes = map[string]bool{
+	"cancelled":              true,
+	"generation_unavailable": true,
+	"generation_timeout":     true,
+	"generation_failed":      true,
+}
+
 type contextParams struct {
 	Refresh bool `json:"refresh"`
 }
@@ -33,11 +40,11 @@ func (s *server) contextGet(req Request) error {
 	if renderFn == nil {
 		renderFn = render.MemorySection
 	}
-	section := renderFn(render.Config{
+	section := filterModelText(renderFn(render.Config{
 		Enabled: true,
 		Store:   s.deps.Store,
 		Root:    s.deps.Store.ProjectDir(),
-	})
+	}))
 	s.snapshotText = section
 	s.snapshotID = snapshotHash(section + "\x00" + s.bindings.ProjectDir + "\x00" + s.bindings.HarnessID)
 	return s.reply(req.ID, contextResult{
@@ -52,6 +59,7 @@ type ingestParams struct {
 
 type ingestResult struct {
 	Accepted int `json:"accepted"`
+	Dropped  int `json:"dropped"`
 	Pending  int `json:"pending"`
 }
 
@@ -60,7 +68,8 @@ func (s *server) ingest(req Request) error {
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		return s.invalid(req.ID, "invalid events.ingest params")
 	}
-	if err := s.deps.Jobs.Ingest(p.Records, p.Boundaries); err != nil {
+	accepted, dropped, err := s.deps.Jobs.Ingest(p.Records, p.Boundaries)
+	if err != nil {
 		return s.wrap(req.ID, err, jobsFailure)
 	}
 	pending, _, err := s.jobCounts()
@@ -68,7 +77,7 @@ func (s *server) ingest(req Request) error {
 		return s.reply(req.ID, nil, storageFailure(err))
 	}
 	return s.reply(req.ID, ingestResult{
-		Accepted: len(p.Records), Pending: pending,
+		Accepted: accepted, Dropped: dropped, Pending: pending,
 	}, nil)
 }
 
@@ -211,6 +220,9 @@ func (s *server) jobsComplete(req Request) error {
 	if strings.TrimSpace(p.JobID) == "" || strings.TrimSpace(p.Lease) == "" {
 		return s.invalid(req.ID, "jobID and lease are required")
 	}
+	if p.Failure != "" && !knownFailureCodes[p.Failure] {
+		return s.invalid(req.ID, "unsupported failure code")
+	}
 	var err error
 	if p.Failure != "" {
 		err = s.deps.Jobs.Fail(p.JobID, p.Lease, p.Failure)
@@ -223,23 +235,80 @@ func (s *server) jobsComplete(req Request) error {
 	return s.reply(req.ID, map[string]any{"id": p.JobID, "applied": true}, nil)
 }
 
+type statusLimits struct {
+	ProjectSoftBytes int `json:"projectSoftBytes"`
+	UserInjectBytes  int `json:"userInjectBytes"`
+	PagesInjectBytes int `json:"pagesInjectBytes"`
+	MaxSearchResults int `json:"maxSearchResults"`
+	MaxDigests       int `json:"maxDigests"`
+	DigestTTLDays    int `json:"digestTTLDays"`
+}
+
 type statusResult struct {
-	Health    string `json:"health"`
-	Pending   int    `json:"pending"`
-	Conflicts int    `json:"conflicts"`
-	LastError string `json:"lastError,omitempty"`
+	Health           string         `json:"health"`
+	Pending          int            `json:"pending"`
+	Conflicts        int            `json:"conflicts"`
+	GenerationState  string         `json:"generationState"`
+	JobStates        map[string]int `json:"jobStates"`
+	PrivacyBlocked   int            `json:"privacyBlocked"`
+	Facts            int            `json:"facts"`
+	UserBytes        int            `json:"userBytes"`
+	Digests          int            `json:"digests"`
+	PagesNeedRefresh []string       `json:"pagesNeedRefresh"`
+	Limits           statusLimits   `json:"limits"`
+	LastErrorCode    string         `json:"lastErrorCode,omitempty"`
 }
 
 func (s *server) statusGet(req Request) error {
 	health := "ok"
-	if err := s.deps.Store.Ping(); err != nil {
-		health = "storage_failure"
-	}
-	pending, conflicts, err := s.jobCounts()
+	facts, err := s.deps.Store.ListFacts()
 	if err != nil {
 		return s.reply(req.ID, nil, storageFailure(err))
 	}
-	out := statusResult{Health: health, Pending: pending, Conflicts: conflicts, LastError: s.lastError}
+	user, err := s.deps.Store.ReadUser()
+	if err != nil {
+		return s.reply(req.ID, nil, storageFailure(err))
+	}
+	digests, err := s.deps.Store.ListDigests()
+	if err != nil {
+		return s.reply(req.ID, nil, storageFailure(err))
+	}
+	stalePages, err := s.deps.Store.StalePages()
+	if err != nil {
+		return s.reply(req.ID, nil, storageFailure(err))
+	}
+	all, err := s.deps.Jobs.Status()
+	if err != nil {
+		return s.reply(req.ID, nil, storageFailure(err))
+	}
+	states := map[string]int{
+		string(jobs.StatePending): 0, string(jobs.StateLeased): 0,
+		string(jobs.StateApplied): 0, string(jobs.StateRetryWait): 0,
+		string(jobs.StateConflict): 0, string(jobs.StateCancelled): 0,
+	}
+	privacyBlocked := 0
+	for _, job := range all {
+		states[string(job.State)]++
+		if job.State == jobs.StateConflict && job.Error == jobs.PrivacyPolicyRequired {
+			privacyBlocked++
+		}
+	}
+	limits := s.deps.Store.Limits()
+	out := statusResult{
+		Health:          health,
+		Pending:         states[string(jobs.StatePending)] + states[string(jobs.StateRetryWait)],
+		Conflicts:       states[string(jobs.StateConflict)],
+		GenerationState: s.generationState,
+		JobStates:       states, PrivacyBlocked: privacyBlocked,
+		Facts: len(facts), UserBytes: len(user), Digests: len(digests),
+		PagesNeedRefresh: stalePages,
+		Limits: statusLimits{
+			ProjectSoftBytes: limits.ProjectSoftBytes, UserInjectBytes: limits.UserInjectBytes,
+			PagesInjectBytes: limits.PagesInjectBytes, MaxSearchResults: limits.MaxSearchResults,
+			MaxDigests: limits.MaxDigests, DigestTTLDays: limits.DigestTTLDays,
+		},
+		LastErrorCode: s.lastErrorCode,
+	}
 	return s.reply(req.ID, out, nil)
 }
 

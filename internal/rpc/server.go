@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
@@ -80,15 +79,16 @@ func OpenBindings(b Bindings) (Deps, error) {
 }
 
 type server struct {
-	deps         Deps
-	bindings     Bindings
-	initialized  bool
-	closed       bool
-	lastError    string
-	snapshotID   string
-	snapshotText string
-	out          io.Writer
-	enc          *json.Encoder
+	deps            Deps
+	bindings        Bindings
+	initialized     bool
+	closed          bool
+	generationState string
+	lastErrorCode   string
+	snapshotID      string
+	snapshotText    string
+	out             io.Writer
+	enc             *json.Encoder
 }
 
 const maxFrameBytes = 16 << 20
@@ -156,7 +156,7 @@ func (s *server) reply(id json.RawMessage, result any, err *Error) error {
 	}
 	resp := Response{JSONRPC: jsonRPCVersion, ID: id, Error: err}
 	if err != nil {
-		s.lastError = fmt.Sprintf("%d %s", err.Code, err.Message)
+		s.lastErrorCode = err.Message
 	}
 	if err == nil {
 		data, marshalErr := json.Marshal(result)
@@ -175,21 +175,23 @@ func (s *server) reply(id json.RawMessage, result any, err *Error) error {
 }
 
 type initParams struct {
-	ProjectDir   string    `json:"projectDir"`
-	UserDir      string    `json:"userDir"`
-	HarnessID    string    `json:"harnessID"`
-	Capabilities []string  `json:"capabilities"`
-	Protocol     *Protocol `json:"protocol"`
+	ProjectDir      string    `json:"projectDir"`
+	UserDir         string    `json:"userDir"`
+	HarnessID       string    `json:"harnessID"`
+	Capabilities    []string  `json:"capabilities"`
+	GenerationState string    `json:"generationState"`
+	Protocol        *Protocol `json:"protocol"`
 }
 
 type initResult struct {
-	JSONRPCVersion string   `json:"jsonrpcVersion"`
-	Protocol       Protocol `json:"protocol"`
-	ProjectDir     string   `json:"projectDir"`
-	UserDir        string   `json:"userDir"`
-	HarnessID      string   `json:"harnessID"`
-	Capabilities   []string `json:"capabilities"`
-	Note           string   `json:"note,omitempty"`
+	JSONRPCVersion  string   `json:"jsonrpcVersion"`
+	Protocol        Protocol `json:"protocol"`
+	ProjectDir      string   `json:"projectDir"`
+	UserDir         string   `json:"userDir"`
+	HarnessID       string   `json:"harnessID"`
+	Capabilities    []string `json:"capabilities"`
+	GenerationState string   `json:"generationState"`
+	Note            string   `json:"note,omitempty"`
 }
 
 func (s *server) initialize(req Request) error {
@@ -211,11 +213,24 @@ func (s *server) initialize(req Request) error {
 		return s.reply(req.ID, nil, invalidParams("projectDir and userDir are required"))
 	}
 
+	generationState := p.GenerationState
+	switch generationState {
+	case "enabled", "disabled", "unavailable":
+	default:
+		generationState = "unknown"
+	}
+	capabilities := make([]string, 0, len(p.Capabilities))
+	for _, capability := range p.Capabilities {
+		if capability == "generation" && generationState != "enabled" {
+			continue
+		}
+		capabilities = append(capabilities, capability)
+	}
 	b := Bindings{
 		ProjectDir:   p.ProjectDir,
 		UserDir:      p.UserDir,
 		HarnessID:    p.HarnessID,
-		Capabilities: p.Capabilities,
+		Capabilities: capabilities,
 		Protocol:     *protocol,
 	}
 	deps := s.deps
@@ -232,15 +247,17 @@ func (s *server) initialize(req Request) error {
 	}
 	s.deps = deps
 	s.bindings = b
+	s.generationState = generationState
 	s.initialized = true
 
 	result := initResult{
-		JSONRPCVersion: jsonRPCVersion,
-		Protocol:       *protocol,
-		ProjectDir:     p.ProjectDir,
-		UserDir:        p.UserDir,
-		HarnessID:      p.HarnessID,
-		Capabilities:   p.Capabilities,
+		JSONRPCVersion:  jsonRPCVersion,
+		Protocol:        *protocol,
+		ProjectDir:      p.ProjectDir,
+		UserDir:         p.UserDir,
+		HarnessID:       p.HarnessID,
+		Capabilities:    capabilities,
+		GenerationState: generationState,
 	}
 	if protocol.Minor != 0 {
 		result.Note = "minor version difference reported"

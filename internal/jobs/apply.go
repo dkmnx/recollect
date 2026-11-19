@@ -44,6 +44,12 @@ func (q *Queue) applyOutput(job Job, input jobInput, output string) error {
 			ops, _ = memory.FilterEvolveOps(result)
 		}
 		for _, op := range ops {
+			op.Key = filterText(op.Key)
+			op.Summary = filterText(op.Summary)
+			op.Content = filterText(op.Content)
+			for i := range op.Links {
+				op.Links[i] = filterText(op.Links[i])
+			}
 			if err := memory.ApplyCaptureOp(q.store, op, namespacedSession(job), input.CapturedOn); err != nil {
 				return err
 			}
@@ -60,7 +66,7 @@ func (q *Queue) applyOutput(job Job, input jobInput, output string) error {
 			_, err := q.store.WriteDigest(memory.Digest{
 				SessionID: namespacedSession(job),
 				Topic:     "run-outcome",
-				Summary:   input.Fallback,
+				Summary:   filterText(input.Fallback),
 				Date:      input.CapturedOn,
 				Updated:   q.now(),
 				Fallback:  true,
@@ -73,8 +79,8 @@ func (q *Queue) applyOutput(job Job, input jobInput, output string) error {
 		}
 		_, err = q.store.WriteDigest(memory.Digest{
 			SessionID: namespacedSession(job),
-			Topic:     topic,
-			Summary:   summary,
+			Topic:     filterText(topic),
+			Summary:   filterText(summary),
 			Date:      input.CapturedOn,
 			Updated:   q.now(),
 		})
@@ -111,6 +117,7 @@ func (q *Queue) applyOutput(job Job, input jobInput, output string) error {
 		}
 		pages, _ := memory.FilterPageDrafts(result, factNames, requestedSet)
 		for _, page := range pages {
+			page.Body = filterText(page.Body)
 			if question, ok := memory.PageQuestion(page.Name); ok {
 				page.Question = question
 			}

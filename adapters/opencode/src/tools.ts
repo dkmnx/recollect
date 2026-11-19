@@ -47,8 +47,8 @@ export function registerMemoryTool(
   client: { memoryExecute(params: unknown): Promise<any> },
 ): Effect.Effect<void> {
   return Effect.gen(function* () {
-    yield* ctx.tool.transform((tools: any) => {
+    yield* (ctx.tool.transform((tools: any) => {
       tools.add(createMemoryTool(client));
-    });
+    }) as Effect.Effect<void>);
   });
 }

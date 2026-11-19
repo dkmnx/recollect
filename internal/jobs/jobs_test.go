@@ -113,7 +113,7 @@ func newTestQueue(t *testing.T, gen Generator) (*Queue, *memory.Store, string, *
 func ingest(t *testing.T, q *Queue, fixture ingestFixture) {
 	t.Helper()
 	q.SetHarness(fixture.Harness)
-	if err := q.Ingest(fixture.Records, fixture.Boundaries); err != nil {
+	if _, _, err := q.Ingest(fixture.Records, fixture.Boundaries); err != nil {
 		t.Fatalf("ingest: %v", err)
 	}
 }
@@ -706,7 +706,7 @@ func TestTwoProcessesCannotLeaseSameJob(t *testing.T) {
 func TestRetryWaitJobBecomesLeaseableAfterCooldown(t *testing.T) {
 	q, _, _, clock := newTestQueue(t, nil)
 	q.SetHarness("opencode")
-	if err := q.Ingest(nil, []RunBoundary{{
+	if _, _, err := q.Ingest(nil, []RunBoundary{{
 		SessionID: "s1", Generation: "g1", Kind: "complete", Time: clock.Now(), Available: true,
 	}}); err != nil {
 		t.Fatal(err)
@@ -734,11 +734,12 @@ func TestRetryWaitJobBecomesLeaseableAfterCooldown(t *testing.T) {
 func TestNextRecoversExpiredLease(t *testing.T) {
 	q, _, _, clock := newTestQueue(t, nil)
 	job := Job{
-		ID:        "expired-lease",
-		HarnessID: "opencode",
-		Kind:      KindRevision,
-		State:     StateLeased,
-		Lease:     "old-lease",
+		ID:                   "expired-lease",
+		HarnessID:            "opencode",
+		Kind:                 KindRevision,
+		State:                StateLeased,
+		Lease:                "old-lease",
+		PrivacyPolicyVersion: privacyPolicyVersion1,
 	}
 	q.mu.Lock()
 	err := q.writePairLocked(job, jobInput{LeasedAt: clock.Now()})
@@ -759,7 +760,7 @@ func TestNextRecoversExpiredLease(t *testing.T) {
 func TestIdleBoundaryCreatesNoWork(t *testing.T) {
 	q, _, _, _ := newTestQueue(t, nil)
 	q.SetHarness("opencode")
-	err := q.Ingest(nil, []RunBoundary{
+	_, _, err := q.Ingest(nil, []RunBoundary{
 		{SessionID: "ses-1", Generation: "g1", Kind: "terminal", Available: false},
 	})
 	if err != nil {
@@ -777,11 +778,12 @@ func TestIdleBoundaryCreatesNoWork(t *testing.T) {
 func TestExpiredLeaseParksAtAttemptCap(t *testing.T) {
 	q, _, _, clock := newTestQueue(t, nil)
 	job := Job{
-		ID:        "expired-cap",
-		HarnessID: "opencode",
-		Kind:      KindRevision,
-		State:     StateLeased,
-		Lease:     "lease-0",
+		ID:                   "expired-cap",
+		HarnessID:            "opencode",
+		Kind:                 KindRevision,
+		State:                StateLeased,
+		Lease:                "lease-0",
+		PrivacyPolicyVersion: privacyPolicyVersion1,
 	}
 	q.mu.Lock()
 	err := q.writePairLocked(job, jobInput{LeasedAt: clock.Now()})
@@ -814,11 +816,12 @@ func TestExpiredLeaseParksAtAttemptCap(t *testing.T) {
 func TestCancelledJobStaysRetryable(t *testing.T) {
 	q, _, _, clock := newTestQueue(t, nil)
 	job := Job{
-		ID:        "cancel-retry",
-		HarnessID: "opencode",
-		Kind:      KindRevision,
-		State:     StateLeased,
-		Lease:     "lease-0",
+		ID:                   "cancel-retry",
+		HarnessID:            "opencode",
+		Kind:                 KindRevision,
+		State:                StateLeased,
+		Lease:                "lease-0",
+		PrivacyPolicyVersion: privacyPolicyVersion1,
 	}
 	q.mu.Lock()
 	err := q.writePairLocked(job, jobInput{LeasedAt: clock.Now()})
@@ -852,7 +855,7 @@ func TestCompactionBoundaryCapturesBeforeHistoryChanges(t *testing.T) {
 	records := []HostRecord{{
 		ID: "m1", SessionID: "ses-1", Generation: "g1", Role: "user", Text: "pre-shrink text", Time: clock.Now(),
 	}}
-	if err := q.Ingest(records, []RunBoundary{{
+	if _, _, err := q.Ingest(records, []RunBoundary{{
 		SessionID: "ses-1", Generation: "g1", Kind: "compaction", Time: clock.Now(), Available: true,
 	}}); err != nil {
 		t.Fatal(err)
@@ -876,7 +879,7 @@ func TestCompactionBoundaryCapturesBeforeHistoryChanges(t *testing.T) {
 func TestUnavailableCompactionCreatesGap(t *testing.T) {
 	q, _, _, clock := newTestQueue(t, nil)
 	q.SetHarness("opencode")
-	if err := q.Ingest(nil, []RunBoundary{{
+	if _, _, err := q.Ingest(nil, []RunBoundary{{
 		SessionID: "ses-1", Generation: "g1", Kind: "compaction", Time: clock.Now(), Available: false,
 	}}); err != nil {
 		t.Fatal(err)
@@ -889,11 +892,12 @@ func TestUnavailableCompactionCreatesGap(t *testing.T) {
 func TestFailParksJobAfterMaxAttempts(t *testing.T) {
 	q, _, _, clock := newTestQueue(t, nil)
 	job := Job{
-		ID:        "retry-cap",
-		HarnessID: "opencode",
-		Kind:      KindRevision,
-		State:     StateLeased,
-		Lease:     "lease-0",
+		ID:                   "retry-cap",
+		HarnessID:            "opencode",
+		Kind:                 KindRevision,
+		State:                StateLeased,
+		Lease:                "lease-0",
+		PrivacyPolicyVersion: privacyPolicyVersion1,
 	}
 	q.mu.Lock()
 	err := q.writePairLocked(job, jobInput{LeasedAt: clock.Now()})

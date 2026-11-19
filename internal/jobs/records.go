@@ -45,16 +45,17 @@ func jobID(harness, session, generation, phase, first, last string) string {
 }
 
 type hashMaterial struct {
-	Kind       Kind   `json:"kind"`
-	HarnessID  string `json:"harnessID"`
-	SessionID  string `json:"sessionID"`
-	Generation string `json:"generation"`
-	Phase      string `json:"phase"`
-	Scope      string `json:"scope"`
-	Prompt     string `json:"prompt"`
-	Payload    string `json:"payload"`
-	CapturedOn string `json:"capturedOn,omitempty"`
-	Fallback   string `json:"fallback,omitempty"`
+	Kind                 Kind   `json:"kind"`
+	HarnessID            string `json:"harnessID"`
+	SessionID            string `json:"sessionID"`
+	Generation           string `json:"generation"`
+	Phase                string `json:"phase"`
+	Scope                string `json:"scope"`
+	Prompt               string `json:"prompt"`
+	Payload              string `json:"payload"`
+	CapturedOn           string `json:"capturedOn,omitempty"`
+	Fallback             string `json:"fallback,omitempty"`
+	PrivacyPolicyVersion int    `json:"privacyPolicyVersion,omitempty"`
 }
 
 // canonicalPayload removes layout differences RawMessage picks up when the
@@ -72,16 +73,17 @@ func canonicalPayload(raw json.RawMessage) string {
 
 func inputHash(job Job, input jobInput) string {
 	material := hashMaterial{
-		Kind:       job.Kind,
-		HarnessID:  job.HarnessID,
-		SessionID:  job.SessionID,
-		Generation: job.Generation,
-		Phase:      job.Phase,
-		Scope:      job.Scope,
-		Prompt:     input.Prompt,
-		Payload:    canonicalPayload(input.Payload),
-		CapturedOn: input.CapturedOn.UTC().Format(time.RFC3339Nano),
-		Fallback:   input.Fallback,
+		Kind:                 job.Kind,
+		HarnessID:            job.HarnessID,
+		SessionID:            job.SessionID,
+		Generation:           job.Generation,
+		Phase:                job.Phase,
+		Scope:                job.Scope,
+		Prompt:               input.Prompt,
+		Payload:              canonicalPayload(input.Payload),
+		CapturedOn:           input.CapturedOn.UTC().Format(time.RFC3339Nano),
+		Fallback:             input.Fallback,
+		PrivacyPolicyVersion: job.PrivacyPolicyVersion,
 	}
 	data, err := json.Marshal(material)
 	if err != nil {
@@ -227,6 +229,11 @@ func collectRevisions(records []HostRecord, job Job, now func() time.Time) ([]me
 				if len(call.EditEvidence) > 0 {
 					unsupported = append(unsupported, call.ID)
 				}
+				continue
+			}
+			// A stripped revision would assert an edit that never occurred.
+			if privateOrSecret(old) || privateOrSecret(newText) {
+				unsupported = append(unsupported, call.ID)
 				continue
 			}
 			at := record.Time

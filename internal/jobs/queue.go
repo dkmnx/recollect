@@ -190,6 +190,9 @@ func deterministicJob(job Job, input jobInput) bool {
 }
 
 func checkLease(job Job, input jobInput, lease string, now time.Time) error {
+	if !policySupported(job.PrivacyPolicyVersion) {
+		return ErrConflict
+	}
 	switch job.State {
 	case StateCancelled:
 		return ErrCancelled
@@ -233,7 +236,7 @@ func captureBoundary(kind string) bool {
 }
 
 // Ingest turns terminal runs into durable jobs. It never calls the generator.
-func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
+func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) (int, int, error) {
 	captures := false
 	for _, boundary := range boundaries {
 		if captureBoundary(boundary.Kind) {
@@ -242,22 +245,23 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 		}
 	}
 	if !captures {
-		return nil
+		return 0, 0, nil
 	}
+	accepted, dropped := countIngested(records, boundaries)
 	release, err := q.acquire()
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	defer release()
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if err := os.MkdirAll(q.jobsDir(), 0o755); err != nil {
-		return fmt.Errorf("jobs: create state dir: %w", err)
+		return 0, 0, fmt.Errorf("jobs: create state dir: %w", err)
 	}
 	maxSeq := 0
 	_, inputs, err := q.listLocked()
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	for _, input := range inputs {
 		if input.Seq > maxSeq {
@@ -284,9 +288,9 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 
 	factList, err := q.store.ListFacts()
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
-	facts := factLines(factList)
+	facts := filterText(factLines(factList))
 	factCount := len(factList)
 
 	var trigger *RunBoundary
@@ -294,11 +298,12 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 		window := selectWindow(recordsFor(records, boundary))
 		first, last := recordSpan(window)
 		base := Job{
-			HarnessID:  q.harness,
-			SessionID:  boundary.SessionID,
-			Generation: boundary.Generation,
-			Scope:      "project",
-			State:      StatePending,
+			HarnessID:            q.harness,
+			SessionID:            boundary.SessionID,
+			Generation:           boundary.Generation,
+			Scope:                "project",
+			State:                StatePending,
+			PrivacyPolicyVersion: privacyPolicyVersion1,
 		}
 		if !captureBoundary(boundary.Kind) {
 			// Idle boundaries are liveness evidence, not capture triggers.
@@ -312,7 +317,7 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 			gap.ID = jobID(gap.HarnessID, gap.SessionID, gap.Generation, gap.Phase, first, last)
 			gap.Error = "unavailable history for generation " + boundary.Generation
 			if err := add(gap, jobInput{}); err != nil {
-				return err
+				return 0, 0, err
 			}
 			continue
 		}
@@ -326,17 +331,22 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 		}
 		firstRecord := capturedOn
 
+		filtered := filterRecords(window)
+		if len(window) > 0 && len(filtered) == 0 {
+			continue
+		}
+
 		if boundary.Kind != "interrupted" {
 			factJob := base
 			factJob.Kind = KindFact
 			factJob.Phase = "fact"
 			factJob.ID = jobID(factJob.HarnessID, factJob.SessionID, factJob.Generation, factJob.Phase, first, last)
 			factInput := jobInput{
-				Prompt:     q.buildPrompt(KindFact, window, facts, nil),
+				Prompt:     q.buildPrompt(KindFact, filtered, facts, nil),
 				CapturedOn: firstRecord,
 			}
 			if err := add(factJob, factInput); err != nil {
-				return err
+				return 0, 0, err
 			}
 		}
 
@@ -344,25 +354,25 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 		digestJob.Kind = KindDigest
 		digestJob.Phase = "digest"
 		digestJob.ID = jobID(digestJob.HarnessID, digestJob.SessionID, digestJob.Generation, digestJob.Phase, first, last)
-		digestInput := jobInput{Prompt: q.buildPrompt(KindDigest, window, facts, nil), CapturedOn: firstRecord}
+		digestInput := jobInput{Prompt: q.buildPrompt(KindDigest, filtered, facts, nil), CapturedOn: firstRecord}
 		if boundary.Kind == "failed" || boundary.Kind == "interrupted" {
 			digestInput.Fallback = fallbackSummary(digestJob, len(window), boundary.Kind)
 		}
 		if err := add(digestJob, digestInput); err != nil {
-			return err
+			return 0, 0, err
 		}
 
 		revisionJob := base
 		revisionJob.Kind = KindRevision
 		revisionJob.Phase = "revision"
 		revisionJob.ID = jobID(revisionJob.HarnessID, revisionJob.SessionID, revisionJob.Generation, revisionJob.Phase, first, last)
-		revisions, unsupported := collectRevisions(window, revisionJob, q.now)
+		revisions, unsupported := collectRevisions(filtered, revisionJob, q.now)
 		revisionPayload, err := json.Marshal(revisions)
 		if err != nil {
-			return err
+			return 0, 0, err
 		}
 		if err := add(revisionJob, jobInput{Payload: revisionPayload, CapturedOn: firstRecord}); err != nil {
-			return err
+			return 0, 0, err
 		}
 		for _, callID := range unsupported {
 			gap := base
@@ -372,24 +382,25 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 			gap.ID = jobID(gap.HarnessID, gap.SessionID, gap.Generation, gap.Phase, callID, "")
 			gap.Error = "unsupported edit evidence for tool call " + callID
 			if err := add(gap, jobInput{}); err != nil {
-				return err
+				return 0, 0, err
 			}
 		}
 	}
 
 	if trigger == nil {
-		return nil
+		return accepted, dropped, nil
 	}
 	makeMaintenance := func(kind Kind, phase string) error {
 		job := Job{
-			ID:         jobID(q.harness, trigger.SessionID, trigger.Generation, phase, "-", "-"),
-			Kind:       kind,
-			HarnessID:  q.harness,
-			SessionID:  trigger.SessionID,
-			Generation: trigger.Generation,
-			Phase:      phase,
-			Scope:      "project",
-			State:      StatePending,
+			ID:                   jobID(q.harness, trigger.SessionID, trigger.Generation, phase, "-", "-"),
+			Kind:                 kind,
+			HarnessID:            q.harness,
+			SessionID:            trigger.SessionID,
+			Generation:           trigger.Generation,
+			Phase:                phase,
+			Scope:                "project",
+			State:                StatePending,
+			PrivacyPolicyVersion: privacyPolicyVersion1,
 		}
 		input := jobInput{Prompt: q.buildPrompt(kind, nil, facts, nil)}
 		switch kind {
@@ -409,24 +420,24 @@ func (q *Queue) Ingest(records []HostRecord, boundaries []RunBoundary) error {
 
 	state, err := q.store.ReadCaptureState()
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 	swept := q.now().Sub(state.LastEvolveAt) >= AutomaticCooldown
 	if factCount >= AutomaticConsolidationFloor && swept {
 		if err := makeMaintenance(KindConsolidate, "automatic"); err != nil {
-			return err
+			return 0, 0, err
 		}
 	} else if factCount >= ManualConsolidationFloor {
 		if err := makeMaintenance(KindConsolidate, "manual"); err != nil {
-			return err
+			return 0, 0, err
 		}
 	}
 	if factCount >= PagesFloor {
 		if err := makeMaintenance(KindPages, "pages"); err != nil {
-			return err
+			return 0, 0, err
 		}
 	}
-	return nil
+	return accepted, dropped, nil
 }
 
 // Next leases the oldest eligible job, including a retry-wait job whose
@@ -453,6 +464,9 @@ func (q *Queue) NextCapable(harness, lease string, generation bool) (*Job, error
 		return nil, err
 	}
 	for i := range jobs {
+		if !policySupported(jobs[i].PrivacyPolicyVersion) {
+			continue
+		}
 		if jobs[i].State != StatePending && jobs[i].State != StateRetryWait {
 			continue
 		}
@@ -627,7 +641,17 @@ func (q *Queue) recoverLocked(jobs []Job, inputs []jobInput) error {
 	now := q.now()
 	for i := range jobs {
 		changed := false
-		if jobs[i].State == StateLeased && !inputs[i].LeasedAt.IsZero() &&
+		if !policySupported(jobs[i].PrivacyPolicyVersion) {
+			state := jobs[i].State
+			if state == StatePending || state == StateRetryWait || state == StateLeased {
+				jobs[i].State = StateConflict
+				jobs[i].Error = PrivacyPolicyRequired
+				jobs[i].Lease = ""
+				jobs[i].RetryAt = time.Time{}
+				inputs[i].LeasedAt = time.Time{}
+				changed = true
+			}
+		} else if jobs[i].State == StateLeased && !inputs[i].LeasedAt.IsZero() &&
 			!now.Before(inputs[i].LeasedAt.Add(defaultLeaseTTL)) {
 			jobs[i].Attempt++
 			jobs[i].Lease = ""

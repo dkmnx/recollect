@@ -8,5 +8,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src/events.ts", "src/rpc.ts", "src/worker.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["src/**/*.test.ts"]
 }

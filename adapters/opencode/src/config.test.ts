@@ -59,4 +59,46 @@ describe("resolveConfig", () => {
     expect(config.userDir).toBe("/srv/memory");
     expect(config.projectDir).toBe("/work/demo");
   });
+
+  test("defaults generation policy to host and timeout to 120000", () => {
+    const config = resolveConfig(
+      { binaryPath: "/opt/recollect" },
+      { project: { canonical: "/work/demo" } },
+      { platform: "linux", env: { HOME: "/home/u" } },
+    );
+    expect(config.generationPolicy).toBe("host");
+    expect(config.generationTimeoutMs).toBe(120000);
+  });
+
+  test("accepts an explicit off policy and a bounded timeout", () => {
+    const config = resolveConfig(
+      { binaryPath: "/opt/recollect", generationPolicy: "off", generationTimeoutMs: 1000 },
+      { project: { canonical: "/work/demo" } },
+      { platform: "linux", env: { HOME: "/home/u" } },
+    );
+    expect(config.generationPolicy).toBe("off");
+    expect(config.generationTimeoutMs).toBe(1000);
+  });
+
+  test("rejects an unknown generation policy", () => {
+    expect(() =>
+      resolveConfig(
+        { binaryPath: "/opt/recollect", generationPolicy: "always" },
+        { project: { canonical: "/work/demo" } },
+        { platform: "linux", env: { HOME: "/home/u" } },
+      ),
+    ).toThrow(ConfigError);
+  });
+
+  test("rejects a timeout outside 1 through 120000", () => {
+    for (const generationTimeoutMs of [0, -1, 120001, 1.5]) {
+      expect(() =>
+        resolveConfig(
+          { binaryPath: "/opt/recollect", generationTimeoutMs },
+          { project: { canonical: "/work/demo" } },
+          { platform: "linux", env: { HOME: "/home/u" } },
+        ),
+      ).toThrow(ConfigError);
+    }
+  });
 });

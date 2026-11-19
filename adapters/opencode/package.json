@@ -19,7 +19,7 @@
   },
   "devDependencies": {
     "@types/node": "26.6.6",
-    "effect": "4.0.1",
+    "effect": "4.1.0",
     "typescript": "7.0.2"
   }
 }

@@ -12,6 +12,12 @@ import (
 // State is a job's place in its lifecycle.
 type State string
 
+// privacyPolicyVersion1 is the first policy that filters content before it is persisted.
+const privacyPolicyVersion1 = 1
+
+// PrivacyPolicyRequired marks jobs parked before the privacy policy upgrade.
+const PrivacyPolicyRequired = "privacy_policy_required"
+
 const (
 	StatePending   State = "pending"
 	StateLeased    State = "leased"
@@ -35,23 +41,24 @@ const (
 
 // Job is one durable unit of capture or maintenance work.
 type Job struct {
-	ID            string
-	Kind          Kind
-	HarnessID     string
-	SessionID     string
-	Generation    string
-	Phase         string
-	Scope         string
-	State         State
-	Lease         string
-	InputHash     string
-	Attempt       int
-	RetryAt       time.Time
-	Output        string
-	Error         string
-	RequestID     string
-	Prompt        string `json:"prompt,omitempty"`
-	Deterministic bool   `json:"deterministic"`
+	ID                   string
+	Kind                 Kind
+	HarnessID            string
+	SessionID            string
+	Generation           string
+	Phase                string
+	Scope                string
+	State                State
+	Lease                string
+	InputHash            string
+	Attempt              int
+	RetryAt              time.Time
+	Output               string
+	Error                string
+	RequestID            string
+	Prompt               string `json:"prompt,omitempty"`
+	Deterministic        bool   `json:"deterministic"`
+	PrivacyPolicyVersion int    `json:"privacyPolicyVersion,omitempty"`
 }
 
 // HostRecord is one normalized transcript record from an adapter.

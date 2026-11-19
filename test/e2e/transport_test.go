@@ -320,12 +320,14 @@ func TestProjectIsolation(t *testing.T) {
 }
 
 type record struct {
-	ID         string `json:"id"`
-	SessionID  string `json:"sessionID"`
-	Generation string `json:"generation"`
-	Time       string `json:"time"`
-	Role       string `json:"role"`
-	Text       string `json:"text"`
+	ID         string            `json:"id"`
+	SessionID  string            `json:"sessionID"`
+	Generation string            `json:"generation"`
+	Time       string            `json:"time"`
+	Role       string            `json:"role"`
+	Text       string            `json:"text"`
+	Synthetic  bool              `json:"synthetic,omitempty"`
+	ToolCalls  []json.RawMessage `json:"toolCalls,omitempty"`
 }
 
 type boundary struct {

@@ -88,7 +88,7 @@ func (s *server) executeRead(req Request, p executeParams, scope engine.Scope) e
 			return s.wrap(req.ID, err, engineFailure)
 		}
 		out.Name = "user"
-		out.Content = content
+		out.Content = filterModelText(content)
 		out.Revision = string(rev)
 		return s.reply(req.ID, out, nil)
 	}
@@ -103,10 +103,13 @@ func (s *server) executeRead(req Request, p executeParams, scope engine.Scope) e
 	if err != nil {
 		return s.wrap(req.ID, err, engineFailure)
 	}
-	out.Name = fact.Name
+	out.Name = filterModelText(fact.Name)
 	out.Revision = string(rev)
-	out.Content = memory.FormatFact(fact)
-	out.Fact = &factView{Name: fact.Name, Description: fact.Description, Body: fact.Body}
+	out.Content = filterModelText(memory.FormatFact(fact))
+	out.Fact = &factView{
+		Name: filterModelText(fact.Name), Description: filterModelText(fact.Description),
+		Body: filterModelText(fact.Body),
+	}
 	return s.reply(req.ID, out, nil)
 }
 
@@ -120,7 +123,7 @@ func (s *server) executeSearch(req Request, p executeParams, scope engine.Scope)
 		if err != nil {
 			return s.wrap(req.ID, err, storageFailure)
 		}
-		out.LineMatches = matches
+		out.LineMatches = filterMatches(matches)
 		return s.reply(req.ID, out, nil)
 	}
 	matches, err := s.deps.Store.SearchFacts(p.Query, p.Scene, p.Limit)
@@ -129,7 +132,8 @@ func (s *server) executeSearch(req Request, p executeParams, scope engine.Scope)
 	}
 	for _, match := range matches {
 		out.Matches = append(out.Matches, factView{
-			Name: match.Name, Description: match.Description, Body: match.Field,
+			Name: filterModelText(match.Name), Description: filterModelText(match.Description),
+			Body: filterModelText(match.Field),
 		})
 	}
 	return s.reply(req.ID, out, nil)
@@ -140,8 +144,9 @@ func (s *server) executeAppend(req Request, p executeParams, scope engine.Scope)
 		return s.invalid(req.ID, "requestID is required for append")
 	}
 	res, err := s.deps.Engine.AppendFact(engine.AppendRequest{
-		RequestID: p.RequestID, Name: p.Name, Description: p.Description,
-		Body: p.Body, Reason: p.Reason, Scope: scope,
+		RequestID: p.RequestID, Name: filterModelText(p.Name),
+		Description: filterModelText(p.Description), Body: filterModelText(p.Body),
+		Reason: p.Reason, Scope: scope,
 	})
 	if err != nil {
 		return s.wrap(req.ID, err, engineFailure)
@@ -154,8 +159,8 @@ func (s *server) executeCorrect(req Request, p executeParams, scope engine.Scope
 		return s.invalid(req.ID, "requestID is required for correction")
 	}
 	res, err := s.deps.Engine.CorrectFact(engine.CorrectRequest{
-		RequestID: p.RequestID, Name: p.Name, Expected: engine.Revision(p.Revision),
-		Description: p.Description, Body: p.Body, Scope: scope,
+		RequestID: p.RequestID, Name: filterModelText(p.Name), Expected: engine.Revision(p.Revision),
+		Description: filterModelText(p.Description), Body: filterModelText(p.Body), Scope: scope,
 	})
 	if err != nil {
 		return s.wrap(req.ID, err, engineFailure)

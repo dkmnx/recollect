@@ -18,6 +18,7 @@ const RETRY_DELAY_MS = 1_000;
 
 export interface SubscribeOptions {
   retryDelayMs?: number;
+  sessionAllowed?: (sessionID: string) => Promise<boolean>;
 }
 
 export interface HostRecord {
@@ -68,7 +69,6 @@ export function normalizeMessage(msg: any): HostRecord | null {
 
   const text = extractText(msg);
   if (!text || !text.trim()) return null;
-  if (text.includes(MEMORY_MARKER)) return null;
 
   return {
     id: msg.id,
@@ -132,6 +132,7 @@ export function subscribeEvents(
   options: SubscribeOptions = {},
 ): Effect.Effect<Fiber.Fiber<void, unknown>> {
   const retryDelayMs = options.retryDelayMs ?? RETRY_DELAY_MS;
+  const sessionAllowed = options.sessionAllowed;
   const pending: Array<{ records: HostRecord[]; boundaries: RunBoundary[] }> = [];
 
   // A failed ingest stays pending until a later subscription flushes it.
@@ -148,11 +149,17 @@ export function subscribeEvents(
       const records: HostRecord[] = [];
       const boundaries: RunBoundary[] = [];
       const message = messageFromEvent(event);
+      const boundary = boundaryFromEvent(event);
+      const sessionID = boundary?.sessionID ??
+        (message && typeof message.sessionID === "string" ? message.sessionID : "");
+      if (sessionID && sessionAllowed &&
+          !(yield* Effect.promise(() => sessionAllowed(sessionID)))) {
+        return;
+      }
       if (message) {
         const record = normalizeMessage(message);
         if (record) records.push(record);
       }
-      const boundary = boundaryFromEvent(event);
       if (boundary) {
         // An idle boundary is a liveness signal, not a capture trigger; reading
         // the full history on every turn would add cost with no engine job.

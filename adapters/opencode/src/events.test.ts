@@ -278,9 +278,11 @@ describe("normalizeMessage", () => {
     expect(normalizeMessage({ id: "m3", sessionID: "s", role: "tool", text: "x" })).toBeNull();
   });
 
-  test("drops memory-generated context and empty text", () => {
-    const injected = MEMORY_MARKER + "snap-1 -->\nMEMORY SECTION";
-    expect(normalizeMessage({ id: "m4", sessionID: "s", role: "user", text: injected })).toBeNull();
+  test("keeps genuine user messages that quote a marker", () => {
+    const quoted = MEMORY_MARKER + "snap-1 -->\nMEMORY SECTION";
+    const record = normalizeMessage({ id: "m4", sessionID: "s", role: "user", text: quoted });
+    expect(record).not.toBeNull();
+    expect(record!.text).toContain(MEMORY_MARKER);
     expect(normalizeMessage({ id: "m5", sessionID: "s", role: "user", text: "   " })).toBeNull();
   });
 });
