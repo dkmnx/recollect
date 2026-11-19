@@ -7,6 +7,7 @@ package memory
 
 import (
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -22,6 +23,7 @@ type FactMatch struct {
 	Field       string  `json:"field"`
 	Scene       string  `json:"scene,omitempty"`
 	Score       float64 `json:"score"`
+	Kind        string  `json:"kind,omitempty"`
 }
 
 // SearchFacts ranks the corpus against query and caps the results at max
@@ -34,31 +36,53 @@ func (s *Store) SearchFacts(query, scene string, max int) ([]FactMatch, error) {
 	if query == "" {
 		return nil, nil
 	}
-	facts, err := s.ListFacts()
+	query = filterSearchText(query)
+	if strings.TrimSpace(query) == "" {
+		return nil, nil
+	}
+	corpus, err := s.searchCorpus()
 	if err != nil {
 		return nil, err
 	}
-	if scene != "" {
-		scoped := make([]Fact, 0, len(facts))
-		for _, fact := range facts {
-			if fact.Scene == "" || fact.Scene == scene {
-				scoped = append(scoped, fact)
-			}
-		}
-		facts = scoped
+	allCorpus := corpus
+	var candidates map[string]bool
+	indexed := false
+	if s.searchBackend != "" && len(queryTokens(query)) > 0 {
+		_, names, ok := s.indexedSearch(allCorpus, query)
+		candidates, indexed = names, ok
 	}
-	ranked := rankFacts(facts, query, s.now())
+	facts := make([]Fact, 0, len(allCorpus))
+	rels := make([]string, 0, len(allCorpus))
+	for _, item := range allCorpus {
+		if scene != "" && item.Fact.Scene != "" && item.Fact.Scene != scene {
+			continue
+		}
+		facts = append(facts, item.Fact)
+		rels = append(rels, item.RelPath)
+	}
+	var ranked []scoredFact
+	if indexed {
+		ranked = rankCandidates(facts, rels, candidates, query, s.now())
+	} else {
+		ranked = rankFacts(facts, query, s.now())
+	}
 	matches := make([]FactMatch, 0, len(ranked))
+	seen := make(map[string]bool, len(ranked))
 	for _, hit := range ranked {
+		if hit.index < 0 || hit.index >= len(rels) {
+			continue
+		}
+		rel := rels[hit.index]
+		seen[rel] = true
 		channel := "project"
-		if hit.fact.Path != "" {
+		if dir := filepath.ToSlash(filepath.Dir(rel)); dir != "." {
 			channel = "topic"
 		}
 		matches = append(matches, FactMatch{
 			Channel:     channel,
 			Name:        hit.fact.Name,
 			Description: hit.fact.Description,
-			Path:        filepath.Join(s.projectDir, filepath.FromSlash(hit.fact.RelPath())),
+			Path:        filepath.Join(s.projectDir, filepath.FromSlash(rel)),
 			Field:       hit.field,
 			Scene:       hit.fact.Scene,
 			Score:       hit.score,
@@ -67,5 +91,54 @@ func (s *Store) SearchFacts(query, scene string, max int) ([]FactMatch, error) {
 			break
 		}
 	}
+	if s.searchBackend == SearchBackendHybrid && max > 0 {
+		matches = s.fillSemantic(matches, allCorpus, query, scene, max, seen)
+	}
 	return matches, nil
+}
+
+func (s *Store) fillSemantic(matches []FactMatch, corpus []searchFact, query, scene string, max int, seen map[string]bool) []FactMatch {
+	scores, err := s.semanticCandidates(query, scene)
+	if err != nil {
+		indexDiagnostic(err)
+		return matches
+	}
+	byPath := make(map[string]searchFact, len(corpus))
+	for _, fact := range corpus {
+		if scene != "" && fact.Fact.Scene != "" && fact.Fact.Scene != scene {
+			continue
+		}
+		byPath[fact.RelPath] = fact
+	}
+	const semanticDistanceCutoff = 0.6
+	type candidate struct {
+		rel  string
+		dist float64
+	}
+	list := make([]candidate, 0, len(scores))
+	for rel, dist := range scores {
+		if !seen[rel] && dist <= semanticDistanceCutoff {
+			list = append(list, candidate{rel: rel, dist: dist})
+		}
+	}
+	sort.SliceStable(list, func(i, j int) bool { return list[i].dist < list[j].dist })
+	for _, item := range list {
+		if max > 0 && len(matches) >= max {
+			break
+		}
+		fact, ok := byPath[item.rel]
+		if !ok {
+			continue
+		}
+		channel := "project"
+		if dir := filepath.ToSlash(filepath.Dir(fact.RelPath)); dir != "." {
+			channel = "topic"
+		}
+		matches = append(matches, FactMatch{
+			Channel: channel, Name: fact.Name, Description: fact.Description,
+			Path:  filepath.Join(s.projectDir, filepath.FromSlash(fact.RelPath)),
+			Scene: fact.Scene, Kind: "semantic",
+		})
+	}
+	return matches
 }

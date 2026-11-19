@@ -49,8 +49,27 @@ func (s *Store) ListFacts() ([]Fact, error) {
 	return s.listFactsLocked()
 }
 
-func (s *Store) listFactsLocked() ([]Fact, error) {
-	var facts []Fact
+type factFile struct {
+	rel string
+	raw string
+	mod time.Time
+}
+
+func (s *Store) listFactFilesLocked() ([]factFile, error) {
+	var files []factFile
+	add := func(rel string) error {
+		path := filepath.Join(s.projectDir, rel)
+		raw, err := readMemoryFile(path)
+		if err != nil {
+			return err
+		}
+		var mod time.Time
+		if info, err := os.Lstat(path); err == nil {
+			mod = info.ModTime()
+		}
+		files = append(files, factFile{rel: rel, raw: raw, mod: mod})
+		return nil
+	}
 	dirEntries, err := os.ReadDir(s.projectDir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -62,11 +81,9 @@ func (s *Store) listFactsLocked() ([]Fact, error) {
 		if entry.IsDir() || entry.Name() == indexFileName || !strings.HasSuffix(entry.Name(), markdownExt) {
 			continue
 		}
-		fact, err := s.readFactFile(entry.Name())
-		if err != nil {
+		if err := add(entry.Name()); err != nil {
 			return nil, err
 		}
-		facts = append(facts, fact)
 	}
 	topicEntries, err := os.ReadDir(TopicsDir(s.projectDir))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -76,21 +93,50 @@ func (s *Store) listFactsLocked() ([]Fact, error) {
 		if !topic.IsDir() || !ValidTopicName(topic.Name()) {
 			continue
 		}
-		files, err := os.ReadDir(filepath.Join(TopicsDir(s.projectDir), topic.Name()))
+		entries, err := os.ReadDir(filepath.Join(TopicsDir(s.projectDir), topic.Name()))
 		if err != nil {
 			return nil, Errorf(CodeIO, "read topic %s: %v", topic.Name(), err)
 		}
-		for _, file := range files {
+		for _, file := range entries {
 			if file.IsDir() || !strings.HasSuffix(file.Name(), markdownExt) {
 				continue
 			}
-			rel := filepath.Join(topicsDirName, topic.Name(), file.Name())
-			fact, err := s.readFactFile(rel)
-			if err != nil {
+			if err := add(filepath.Join(topicsDirName, topic.Name(), file.Name())); err != nil {
 				return nil, err
 			}
-			facts = append(facts, fact)
 		}
+	}
+	return files, nil
+}
+
+func parseFactBytes(rel string, raw string, mod time.Time) Fact {
+	fact := ParseFact(raw)
+	base := strings.TrimSuffix(filepath.Base(rel), markdownExt)
+	if fact.Name == "" {
+		fact.Name = FactSlug(base)
+	}
+	if fact.Name == "" {
+		fact.Name = base
+	}
+	if fact.Description == "" {
+		fact.Description = CollapseLine(firstNonEmptyLine(fact.Body))
+	}
+	fact.Path = filepath.ToSlash(filepath.Dir(rel))
+	if fact.Path == "." {
+		fact.Path = ""
+	}
+	fact.ModTime = mod
+	return fact
+}
+
+func (s *Store) listFactsLocked() ([]Fact, error) {
+	files, err := s.listFactFilesLocked()
+	if err != nil {
+		return nil, err
+	}
+	facts := make([]Fact, 0, len(files))
+	for _, file := range files {
+		facts = append(facts, parseFactBytes(file.rel, file.raw, file.mod))
 	}
 	sort.SliceStable(facts, func(i, j int) bool {
 		if !facts[i].ModTime.Equal(facts[j].ModTime) {
@@ -117,29 +163,15 @@ func CountFacts(projectDir string) (int, error) {
 // file name and its description from the first body line.
 func (s *Store) readFactFile(rel string) (Fact, error) {
 	path := filepath.Join(s.projectDir, rel)
-	content, err := readMemoryFile(path)
+	raw, err := readMemoryFile(path)
 	if err != nil {
 		return Fact{}, err
 	}
-	fact := ParseFact(content)
-	base := strings.TrimSuffix(filepath.Base(rel), markdownExt)
-	if fact.Name == "" {
-		fact.Name = FactSlug(base)
-	}
-	if fact.Name == "" {
-		fact.Name = base
-	}
-	if fact.Description == "" {
-		fact.Description = CollapseLine(firstNonEmptyLine(fact.Body))
-	}
-	fact.Path = filepath.ToSlash(filepath.Dir(rel))
-	if fact.Path == "." {
-		fact.Path = ""
-	}
+	var mod time.Time
 	if info, err := os.Lstat(path); err == nil {
-		fact.ModTime = info.ModTime()
+		mod = info.ModTime()
 	}
-	return fact, nil
+	return parseFactBytes(rel, raw, mod), nil
 }
 
 // ReadFact returns the fact with the given name, searching the root first

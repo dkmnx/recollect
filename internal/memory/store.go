@@ -17,11 +17,13 @@ import (
 // recorded once in project.json. Now is the injected clock (nil means
 // time.Now) and Limits zero fields fall back to DefaultLimits.
 type Options struct {
-	UserDir    string
-	ProjectDir string
-	Meta       ProjectMeta
-	Now        func() time.Time
-	Limits     Limits
+	UserDir       string
+	ProjectDir    string
+	Meta          ProjectMeta
+	Now           func() time.Time
+	Limits        Limits
+	SearchBackend string
+	Embedder      EmbeddingProvider
 }
 
 // Store owns every read and write of the memory files. Writers serialize on
@@ -30,12 +32,16 @@ type Options struct {
 // size or count (ADR-005): the fact files, the index, user.md, and the
 // digests all grow without caps.
 type Store struct {
-	userDir    string
-	projectDir string
-	meta       ProjectMeta
-	now        func() time.Time
-	limits     Limits
-	mu         sync.Mutex
+	userDir       string
+	projectDir    string
+	meta          ProjectMeta
+	now           func() time.Time
+	limits        Limits
+	searchBackend string
+	embedder      EmbeddingProvider
+	indexMu       sync.Mutex
+	searchIndex   *searchIndex
+	mu            sync.Mutex
 	// migrateErr records a failed legacy migration; the legacy files stay
 	// intact (copy-first), and /memory status surfaces the failure.
 	migrateErr error
@@ -54,11 +60,13 @@ func NewStore(opts Options) *Store {
 		now = time.Now
 	}
 	store := &Store{
-		userDir:    opts.UserDir,
-		projectDir: opts.ProjectDir,
-		meta:       opts.Meta,
-		now:        now,
-		limits:     opts.Limits.withDefaults(),
+		userDir:       opts.UserDir,
+		projectDir:    opts.ProjectDir,
+		meta:          opts.Meta,
+		now:           now,
+		limits:        opts.Limits.withDefaults(),
+		searchBackend: opts.SearchBackend,
+		embedder:      opts.Embedder,
 	}
 	if _, err := store.MigrateLegacyIfPresent(); err != nil {
 		store.migrateErr = err

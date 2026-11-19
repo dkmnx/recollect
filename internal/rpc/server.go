@@ -54,6 +54,11 @@ func canonicalDir(path string) (string, error) {
 
 // OpenBindings constructs bound dependencies from initialize values.
 func OpenBindings(b Bindings) (Deps, error) {
+	return OpenBindingsWithSearch(b, "", nil)
+}
+
+// The search backend is process configuration, not a client-controlled binding.
+func OpenBindingsWithSearch(b Bindings, searchBackend string, embedder memory.EmbeddingProvider) (Deps, error) {
 	projectDir, err := canonicalDir(b.ProjectDir)
 	if err != nil {
 		return Deps{}, err
@@ -63,9 +68,11 @@ func OpenBindings(b Bindings) (Deps, error) {
 		return Deps{}, err
 	}
 	store := memory.NewStore(memory.Options{
-		ProjectDir: projectDir,
-		UserDir:    userDir,
-		Meta:       memory.ProjectMetaFor(projectDir),
+		ProjectDir:    projectDir,
+		UserDir:       userDir,
+		Meta:          memory.ProjectMetaFor(projectDir),
+		SearchBackend: searchBackend,
+		Embedder:      embedder,
 	})
 	eng := engine.Open(engine.Config{
 		Store:      store,

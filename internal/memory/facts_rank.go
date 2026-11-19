@@ -53,6 +53,7 @@ type scoredFact struct {
 	fact  Fact
 	score float64
 	field string
+	index int
 }
 
 // rankFacts scores and orders facts for query. A blank query returns nil;
@@ -72,7 +73,7 @@ func rankFacts(facts []Fact, query string, now time.Time) []scoredFact {
 	if len(tokens) == 0 {
 		out := make([]scoredFact, len(facts))
 		for i, fact := range facts {
-			out[i] = scoredFact{fact: fact, field: matchField(fact, phraseHit)}
+			out[i] = scoredFact{fact: fact, field: matchField(fact, phraseHit), index: i}
 		}
 		return out
 	}
@@ -86,7 +87,51 @@ func rankFacts(facts []Fact, query string, now time.Time) []scoredFact {
 		score := relevance
 		score += freshnessBonus(fact, now)
 		score += backlinkWeight * math.Log(1+float64(backlinkCount(facts, fact.Name)))
-		out = append(out, scoredFact{fact: fact, score: score, field: field})
+		out = append(out, scoredFact{fact: fact, score: score, field: field, index: i})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].score != out[j].score {
+			return out[i].score > out[j].score
+		}
+		return out[i].fact.Name < out[j].fact.Name
+	})
+	return out
+}
+
+// A narrowed candidate set must keep the same order and scores as rankFacts.
+func rankCandidates(facts []Fact, rels []string, candidates map[string]bool, query string, now time.Time) []scoredFact {
+	normalized := strings.TrimSpace(normalizeText(query))
+	if normalized == "" || len(facts) == 0 {
+		return nil
+	}
+	phraseHit := func(s string) bool {
+		return strings.Contains(normalizeText(s), normalized)
+	}
+	tokens := queryTokens(query)
+	if len(tokens) == 0 {
+		out := make([]scoredFact, 0, len(facts))
+		for i, fact := range facts {
+			if !candidates[rels[i]] {
+				continue
+			}
+			out = append(out, scoredFact{fact: fact, field: matchField(fact, phraseHit), index: i})
+		}
+		return out
+	}
+	scorer := newFactScorer(facts)
+	out := make([]scoredFact, 0, len(candidates))
+	for i, fact := range facts {
+		if !candidates[rels[i]] {
+			continue
+		}
+		relevance, field := scorer.score(i, fact, tokens, phraseHit)
+		if relevance <= 0 {
+			continue
+		}
+		score := relevance
+		score += freshnessBonus(fact, now)
+		score += backlinkWeight * math.Log(1+float64(backlinkCount(facts, fact.Name)))
+		out = append(out, scoredFact{fact: fact, score: score, field: field, index: i})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].score != out[j].score {

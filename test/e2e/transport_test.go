@@ -72,7 +72,7 @@ type client struct {
 	mu     sync.Mutex
 }
 
-func start(t *testing.T) *client {
+func start(t testing.TB) *client {
 	t.Helper()
 	cmd := exec.Command(binaryPath)
 	in, err := cmd.StdinPipe()
@@ -118,7 +118,7 @@ func (c *client) callRaw(method string, params any) (response, error) {
 	return resp, nil
 }
 
-func (c *client) call(t *testing.T, method string, params any) response {
+func (c *client) call(t testing.TB, method string, params any) response {
 	t.Helper()
 	resp, err := c.callRaw(method, params)
 	if err != nil {
@@ -127,7 +127,7 @@ func (c *client) call(t *testing.T, method string, params any) response {
 	return resp
 }
 
-func ok(t *testing.T, resp response) json.RawMessage {
+func ok(t testing.TB, resp response) json.RawMessage {
 	t.Helper()
 	if resp.Error != nil {
 		t.Fatalf("unexpected error %d %s", resp.Error.Code, resp.Error.Message)
@@ -138,7 +138,7 @@ func ok(t *testing.T, resp response) json.RawMessage {
 	return resp.Result
 }
 
-func wantCode(t *testing.T, resp response, code int) {
+func wantCode(t testing.TB, resp response, code int) {
 	t.Helper()
 	if resp.Error == nil {
 		t.Fatalf("want error %d, got success %s", code, resp.Result)
@@ -167,6 +167,7 @@ type execParams struct {
 	Revision    string `json:"revision,omitempty"`
 	Query       string `json:"query,omitempty"`
 	Scene       string `json:"scene,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
 }
 
 type factView struct {
@@ -195,13 +196,13 @@ type dirs struct {
 	user    string
 }
 
-func tempDirs(t *testing.T) dirs {
+func tempDirs(t testing.TB) dirs {
 	t.Helper()
 	base := t.TempDir()
 	return dirs{project: filepath.Join(base, "project"), user: filepath.Join(base, "user")}
 }
 
-func initialize(t *testing.T, c *client, d dirs, harness string, protocol map[string]int) {
+func initialize(t testing.TB, c *client, d dirs, harness string, protocol map[string]int) {
 	t.Helper()
 	resp := c.call(t, "initialize", initParams{
 		ProjectDir: d.project, UserDir: d.user, HarnessID: harness,
@@ -210,7 +211,7 @@ func initialize(t *testing.T, c *client, d dirs, harness string, protocol map[st
 	ok(t, resp)
 }
 
-func appendFact(t *testing.T, c *client, id, desc, body string) execResult {
+func appendFact(t testing.TB, c *client, id, desc, body string) execResult {
 	t.Helper()
 	raw := ok(t, c.call(t, "memory.execute", execParams{
 		Target: "project", Operation: "append", RequestID: id,

@@ -170,6 +170,11 @@ func (s *server) maintenanceExecute(req Request) error {
 	switch p.Action {
 	case "status":
 		return s.maintenanceStatus(req, p.Action)
+	case "refresh":
+		if err := s.deps.Store.RefreshSearch(); err != nil {
+			return s.reply(req.ID, nil, storageFailure(err))
+		}
+		return s.reply(req.ID, map[string]any{"action": "refresh"}, nil)
 	case "import":
 		return s.maintenanceImport(req, p)
 	case "import-status":
