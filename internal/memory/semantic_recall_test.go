@@ -115,6 +115,7 @@ func TestHybridBackfillsUnchangedFacts(t *testing.T) {
 		Now:           func() time.Time { return deterministicNow },
 		SearchBackend: memory.SearchBackendSQLite,
 	})
+	t.Cleanup(func() { _ = lexicalStore.Close() })
 	if _, err := lexicalStore.AppendFact(memory.Fact{
 		Name: "setup-doc", Description: "setup guide", Body: "installation steps",
 	}); err != nil {
@@ -131,6 +132,7 @@ func TestHybridBackfillsUnchangedFacts(t *testing.T) {
 		SearchBackend: memory.SearchBackendHybrid,
 		Embedder:      memory.NewDeterministicEmbedder(256),
 	})
+	t.Cleanup(func() { _ = hybridStore.Close() })
 	if err := hybridStore.RefreshSearch(); err != nil {
 		t.Fatal(err)
 	}
