@@ -68,6 +68,26 @@ func TestChainBackfillCandidates(t *testing.T) {
 	}
 }
 
+// audit: behavior - an absolute path with a tilde component still names its file as a backfill candidate.
+// audit: regression - the token class lacked tilde, so 8.3 short-name temp paths truncated into relative fragments and the candidate dropped.
+// audit: coverage gap - no backfill test used a tilde in any path component; windows CI met it first as RUNNER~1.
+// audit: seam - ChainBackfillCandidates over real temp files, the same public extraction contract the runner drives.
+func TestChainBackfillTildePath(t *testing.T) {
+	root := t.TempDir()
+	short := filepath.Join(root, "runner~1")
+	if err := os.MkdirAll(short, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(short, "notes.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	abs := filepath.Join(short, "notes.md")
+	got := memory.ChainBackfillCandidates("see "+abs, root, 4)
+	if len(got) != 1 || got[0] != "runner~1/notes.md" {
+		t.Fatalf("candidates = %v, want [runner~1/notes.md]", got)
+	}
+}
+
 // Test-audit record (test-audit skill):
 // Protected behavior: MarkChainBackfillPending records unseen paths with
 // an empty (pending) value, ignores paths the chain already holds and

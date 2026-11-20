@@ -22,7 +22,9 @@ const chainBackfillMaxEntries = 256
 // ending in a short extension. The class carries the colon so a Windows
 // drive letter stays inside the token, and prose tokens ("e.g") survive
 // the match and die on the stat check.
-var chainPathTokenRE = regexp.MustCompile(`[A-Za-z0-9_./\\:-]+\.[A-Za-z0-9]{1,10}`)
+// The class keeps ~ so 8.3 short names (RUNNER~1) survive tokenization; a
+// truncated absolute path turns relative and drops, losing the candidate.
+var chainPathTokenRE = regexp.MustCompile(`[A-Za-z0-9_./\\~:-]+\.[A-Za-z0-9]{1,10}`)
 
 // ChainBackfillCandidates extracts up to max workspace files the text
 // names: path-like tokens that stat as regular files under root, spelled
