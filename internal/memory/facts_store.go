@@ -158,22 +158,6 @@ func CountFacts(projectDir string) (int, error) {
 	return len(facts), err
 }
 
-// readFactFile reads and parses one fact file given its path relative to
-// the project directory. A file without frontmatter takes its name from the
-// file name and its description from the first body line.
-func (s *Store) readFactFile(rel string) (Fact, error) {
-	path := filepath.Join(s.projectDir, rel)
-	raw, err := readMemoryFile(path)
-	if err != nil {
-		return Fact{}, err
-	}
-	var mod time.Time
-	if info, err := os.Lstat(path); err == nil {
-		mod = info.ModTime()
-	}
-	return parseFactBytes(rel, raw, mod), nil
-}
-
 // ReadFact returns the fact with the given name, searching the root first
 // and then the topic directories.
 func (s *Store) ReadFact(name string) (Fact, error) {
