@@ -200,8 +200,23 @@ replacement tests run only on Windows.
 
 ## Contributing
 
-Run the checks before opening a change. Keep new behavior covered by tests at
-the store or search boundary.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before you open a change. It lists the
+required toolchain, every check CI runs, the test audit record, and the commit
+and branch conventions.
+
+The short version:
+
+```sh
+gofmt -l .
+go vet ./...
+go test ./... -count=1
+go test -race ./... -count=1
+go run ./tools/checktestaudit
+staticcheck ./...
+govulncheck ./...
+```
+
+Keep new behavior covered by tests at the store or search boundary.
 
 ## License
 
