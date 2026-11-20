@@ -33,21 +33,34 @@ Features:
 
 ## Requirements
 
-Go 1.27 or later.
+Go 1.27.4 or later.
 
 ## Installation
 
-1. Clone the repository.
-2. Open the repository directory.
-3. Download the module dependencies.
+Build the engine from a checkout:
 
 ```sh
-git clone <repository-url>
+git clone https://github.com/dkmnx/recollect
 cd recollect
-go mod download
+go build -o recollect ./cmd/recollect
 ```
 
-The module is local. It has not been published.
+After the module is published, install it with:
+
+```sh
+go install github.com/dkmnx/recollect/cmd/recollect@latest
+```
+
+The binary serves JSON-RPC on stdin and stdout. It also has setup commands:
+
+```sh
+recollect version
+recollect doctor
+recollect setup opencode
+```
+
+`setup opencode` prints the plugin entry for the OpenCode host. Add `--write`
+to merge it into the global `opencode.json`.
 
 ## Usage
 

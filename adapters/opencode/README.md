@@ -31,8 +31,18 @@ Confirm it runs:
 
 ## Add the plugin to OpenCode
 
-Add one entry to the `plugins` array in your OpenCode config. Use the global
-config at `~/.config/opencode/opencode.jsonc` or a project config at
+The engine prints the exact entry for this machine:
+
+```sh
+./recollect setup opencode
+```
+
+Pass `--write` to merge it into the global `opencode.json`. The command does
+not rewrite `opencode.jsonc`, because a JSON encoder would drop its comments.
+Run `./recollect doctor` to probe the engine before you restart the host.
+
+To add the entry by hand, use the `plugins` array in your OpenCode config. Use
+the global config at `~/.config/opencode/opencode.jsonc` or a project config at
 `./opencode.jsonc`.
 
 ```jsonc
