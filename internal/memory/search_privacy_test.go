@@ -8,6 +8,7 @@ package memory_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/dkmnx/recollect/internal/memory"
@@ -108,26 +109,49 @@ func TestSearchRedactionMarkerIsNotSearchable(t *testing.T) {
 	}
 }
 
-func TestSearchFiltersRawFileNameBeforeSlug(t *testing.T) {
+// audit: behavior - search drops facts whose raw file name is a bare secret token.
+// audit: regression - the name was slugged before the secret filter, so AKIA-style file names stayed searchable.
+// audit: coverage gap - the raw-name filter ran only in the marker test, which NTFS cannot host.
+// audit: seam - ListFacts over a store with an AKIA-named fact file, then SearchFacts for the name and its body.
+func TestSearchFiltersSecretFileName(t *testing.T) {
 	store, _, project := newTestStore(t, memory.Limits{})
 	secretPath := project + "/AKIA1234567890ABCDEF.md"
 	if err := os.WriteFile(secretPath, []byte("---\ndescription: plain\n---\n\nbody\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(project+"/<private>hidden.md",
-		[]byte("---\ndescription: plain\n---\n\nbody\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
 	facts, err := store.ListFacts()
-	if err != nil || len(facts) != 2 {
+	if err != nil || len(facts) != 1 {
 		t.Fatalf("fixture facts = %d, err = %v", len(facts), err)
 	}
 	if names := searchNames(t, store, "plain", ""); len(names) != 0 {
 		t.Fatalf("facts with filtered derived names were not skipped: %v", names)
 	}
-	for _, query := range []string{"akia", "hidden"} {
-		if names := searchNames(t, store, query, ""); len(names) != 0 {
-			t.Fatalf("filename leak for %q: %v", query, names)
-		}
+	if names := searchNames(t, store, "akia", ""); len(names) != 0 {
+		t.Fatalf("secret file name leak: %v", names)
+	}
+}
+
+// audit: behavior - search drops a fact whose raw file name carries a private marker.
+// audit: regression - filtering the name after slug normalization stripped the markers and left the name searchable.
+// audit: coverage gap - only a file name with a marker separates raw-name filtering from slug-then-filter.
+// audit: seam - ListFacts over a store with a marker-named fact file, then SearchFacts for the marker word.
+func TestSearchFiltersPrivateMarkerFileName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("NTFS rejects angle brackets in file names; the fixture cannot exist there")
+	}
+	store, _, project := newTestStore(t, memory.Limits{})
+	if err := os.WriteFile(project+"/<private>hidden.md",
+		[]byte("---\ndescription: plain\n---\n\nbody\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	facts, err := store.ListFacts()
+	if err != nil || len(facts) != 1 {
+		t.Fatalf("fixture facts = %d, err = %v", len(facts), err)
+	}
+	if names := searchNames(t, store, "plain", ""); len(names) != 0 {
+		t.Fatalf("facts with filtered derived names were not skipped: %v", names)
+	}
+	if names := searchNames(t, store, "hidden", ""); len(names) != 0 {
+		t.Fatalf("marker file name leak: %v", names)
 	}
 }

@@ -20,11 +20,19 @@ func createPrivateDir(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	// Create the directory plainly. Handing CreateDirectory a caller-built
+	// security descriptor fails with ERROR_PRIVILEGE_NOT_HELD for some
+	// tokens; .NET's CreateTempDirectoryWithAce fails the same way.
+	if err := os.Mkdir(path, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	// Restrict afterwards. The process owns the directory it just created,
+	// so replacing the DACL needs no privilege.
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return err
 	}
-	access := windows.EXPLICIT_ACCESS{
+	dacl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{{
 		AccessPermissions: windows.GENERIC_ALL,
 		AccessMode:        windows.GRANT_ACCESS,
 		Inheritance:       windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE,
@@ -33,23 +41,13 @@ func createPrivateDir(path string) error {
 			TrusteeType:  windows.TRUSTEE_IS_USER,
 			TrusteeValue: windows.TrusteeValueFromSID(user.User.Sid),
 		},
-	}
-	sd, err := windows.BuildSecurityDescriptor(nil, nil, []windows.EXPLICIT_ACCESS{access}, nil, nil)
+	}}, nil)
 	if err != nil {
 		return err
 	}
-	if err := sd.SetControl(windows.SE_DACL_PROTECTED, windows.SE_DACL_PROTECTED); err != nil {
-		return err
-	}
-	sa := windows.SecurityAttributes{
-		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
-		SecurityDescriptor: sd,
-	}
-	err = windows.CreateDirectory(windows.StringToUTF16Ptr(path), &sa)
-	if err != nil && !errors.Is(err, os.ErrExist) {
-		return err
-	}
-	return nil
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		nil, nil, dacl, nil)
 }
 
 func validatePrivateDir(path string) error {

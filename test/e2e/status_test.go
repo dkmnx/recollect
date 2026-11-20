@@ -113,6 +113,10 @@ func TestStatusReportsPrivacyConflicts(t *testing.T) {
 	}
 }
 
+// audit: behavior - status reports storage_failure for an unreadable store and writes no probe file.
+// audit: regression - the unreadable store was built with chmod 0o000, which Windows ignores, so the daemon looked healthy.
+// audit: coverage gap - no test constructed a broken store through a path both NTFS and POSIX reject.
+// audit: seam - status.get over the binary while a plain file occupies the topics directory path.
 func TestStatusReportsStorageFailureWithoutWriting(t *testing.T) {
 	d := tempDirs(t)
 	c := start(t)
@@ -121,10 +125,15 @@ func TestStatusReportsStorageFailureWithoutWriting(t *testing.T) {
 	if err := os.MkdirAll(d.project, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(d.project, 0o000); err != nil {
+	// A file at the topics path breaks fact enumeration on every platform;
+	// chmod 0o000 leaves the store readable on Windows.
+	blocker := filepath.Join(d.project, "topics")
+	if err := os.RemoveAll(blocker); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Chmod(d.project, 0o755)
+	if err := os.WriteFile(blocker, []byte("blocker"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	resp := c.call(t, "status.get", map[string]any{})
 	if resp.Error == nil {
@@ -133,7 +142,7 @@ func TestStatusReportsStorageFailureWithoutWriting(t *testing.T) {
 	if resp.Error.Code != -32006 || resp.Error.Message != "storage_failure" {
 		t.Fatalf("unreadable store error = %d %s", resp.Error.Code, resp.Error.Message)
 	}
-	if err := os.Chmod(d.project, 0o755); err != nil {
+	if err := os.Remove(blocker); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Lstat(filepath.Join(d.project, ".ping")); !os.IsNotExist(err) {
