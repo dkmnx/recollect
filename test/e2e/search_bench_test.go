@@ -50,6 +50,7 @@ func BenchmarkSearchRPC(b *testing.B) {
 			for _, query := range rpcBenchQueries {
 				b.Run(query.name, func(b *testing.B) {
 					b.ReportAllocs()
+					b.ResetTimer()
 					params := execParams{
 						Target: "project", Operation: "search",
 						Query: query.query, Scene: query.scene, Limit: 20,

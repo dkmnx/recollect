@@ -16,6 +16,9 @@ type searchFact struct {
 // stripPrivateForSearch removes private spans without leaving a searchable marker.
 // Newlines survive so frontmatter and field boundaries stay in place.
 func stripPrivateForSearch(content string) string {
+	if !strings.Contains(content, "<") {
+		return content
+	}
 	matches := privateTagPattern.FindAllStringSubmatchIndex(content, -1)
 	if len(matches) == 0 {
 		return content
@@ -59,9 +62,26 @@ func stripPrivateForSearch(content string) string {
 	return b.String()
 }
 
+// secretLiterals are conservative lead-ins for every secret pattern. A text
+// without one cannot match, so the regex pass is skipped.
+var secretLiterals = func() []string {
+	literals := make([]string, 0, len(secretLeads)+len(secretNames)+3)
+	for _, lead := range secretLeads {
+		literals = append(literals, lead.lead)
+	}
+	literals = append(literals, secretNames...)
+	return append(literals, "-----begin", "eyj", "://")
+}()
+
 func removeSecretsForSearch(text string) string {
-	for _, pattern := range secretPatterns {
-		text = pattern.ReplaceAllString(text, " ")
+	lower := strings.ToLower(text)
+	for _, literal := range secretLiterals {
+		if strings.Contains(lower, literal) {
+			for _, pattern := range secretPatterns {
+				text = pattern.ReplaceAllString(text, " ")
+			}
+			return text
+		}
 	}
 	return text
 }
@@ -80,10 +100,10 @@ func filteredFact(rel string, raw string, mod time.Time) (searchFact, bool) {
 	if fact.Description == "" {
 		fact.Description = CollapseLine(firstNonEmptyLine(fact.Body))
 	}
-	fact.Name = filterSearchText(fact.Name)
-	fact.Description = filterSearchText(fact.Description)
-	fact.Body = filterSearchText(fact.Body)
-	fact.Scene = filterSearchText(fact.Scene)
+	fact.Name = removeSecretsForSearch(fact.Name)
+	fact.Description = removeSecretsForSearch(fact.Description)
+	fact.Body = removeSecretsForSearch(fact.Body)
+	fact.Scene = removeSecretsForSearch(fact.Scene)
 	if strings.TrimSpace(fact.Name) == "" || strings.TrimSpace(fact.Description) == "" &&
 		strings.TrimSpace(fact.Body) == "" {
 		return searchFact{}, false

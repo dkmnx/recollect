@@ -42,6 +42,7 @@ func BenchmarkBackendComparison(b *testing.B) {
 		b.Run(backend, func(b *testing.B) {
 			store := backendStore(b, backend, 1000)
 			b.ReportAllocs()
+			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				if _, err := store.SearchFacts("configuration", "", 20); err != nil {
 					b.Fatal(err)

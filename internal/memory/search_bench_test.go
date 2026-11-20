@@ -62,6 +62,7 @@ func BenchmarkSearchFacts(b *testing.B) {
 			for _, query := range benchQueries {
 				b.Run(query.name, func(b *testing.B) {
 					b.ReportAllocs()
+					b.ResetTimer()
 					for i := 0; i < b.N; i++ {
 						if _, err := store.SearchFacts(query.query, query.scene, 20); err != nil {
 							b.Fatal(err)
