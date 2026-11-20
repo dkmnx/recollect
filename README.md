@@ -51,6 +51,30 @@ After the module is published, install it with:
 go install github.com/dkmnx/recollect/cmd/recollect@latest
 ```
 
+### Install script
+
+Download and inspect the script, then run it. It verifies `checksums.txt`
+before it installs.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh -o install.sh
+less install.sh
+sh install.sh --version v0.1.0
+```
+
+On Windows, use the PowerShell script:
+
+```powershell
+irm https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.ps1 -OutFile install.ps1
+notepad install.ps1
+.\install.ps1 -Version v0.1.0
+```
+
+The scripts install to `~/.local/bin` or
+`%LOCALAPPDATA%\Programs\recollect` by default. Pass `--dir` or `-Dir` to
+choose another directory, and set `RECOLLECT_INSTALL_DIR` to change the POSIX
+default.
+
 The binary serves JSON-RPC on stdin and stdout. It also has setup commands:
 
 ```sh

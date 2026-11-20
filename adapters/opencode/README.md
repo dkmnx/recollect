@@ -18,12 +18,20 @@ events for durable memory.
 ### From a release
 
 Download the archive for your platform from GitHub Releases and verify it
-against `checksums.txt`.
+against `checksums.txt`, or run the repository install script.
 
 ```sh
 tar -xzf recollect_v0.1.0_linux_amd64.tar.gz
 install -m 755 recollect ~/.local/bin/recollect
 recollect version
+```
+
+The script form is:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh -o install.sh
+less install.sh
+sh install.sh --version v0.1.0
 ```
 
 ### With go install
