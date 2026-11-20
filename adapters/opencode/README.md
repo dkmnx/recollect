@@ -58,11 +58,50 @@ go build -o recollect ./cmd/recollect
 ./recollect version
 ```
 
-Put the binary on `PATH` or use an absolute path in the plugin options.
+Put the binary on `PATH`, or leave the default install location. The plugin
+finds it automatically; an explicit path is only needed for a custom install.
 
 ## Add the plugin to OpenCode
 
-The engine prints the exact entry for this machine:
+### Published package
+
+After the adapter is published, use the npm package:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "opencode-recollect@0.1.0",
+      "options": {
+        "binaryPath": "/home/you/.local/bin/recollect",
+        "userDir": "/home/you/.recollect",
+        "generationPolicy": "host"
+      }
+    }
+  ]
+}
+```
+
+Pin the version. `opencode-recollect@latest` also works, but a later release
+can change under you. The `binaryPath` option is optional when the engine is
+on `PATH` or in the default install directory.
+
+OpenCode installs a missing package in the background at server startup, so
+you do not run `npm install`. The CLI can add the package to the global config
+and install it in one step:
+
+```sh
+opencode plugin add opencode-recollect@0.1.0
+opencode plugin check
+```
+
+Exact versions stay pinned. `opencode plugin update` moves an unpinned package,
+and `opencode plugin remove opencode-recollect@0.1.0` removes it.
+
+### From a checkout
+
+The engine prints the exact local entry for this machine:
 
 ```sh
 recollect setup opencode
@@ -80,9 +119,10 @@ does not rewrite `opencode.jsonc`, because a JSON encoder would drop its
 comments. Run `recollect doctor` to probe the engine before you restart the
 host.
 
-To add the entry by hand, use the `plugins` array in your OpenCode config. Use
-the global config at `~/.config/opencode/opencode.jsonc` or a project config at
-`./opencode.jsonc`.
+To add the local entry by hand, use the `plugins` array in your OpenCode
+config. Use the global config at `~/.config/opencode/opencode.jsonc` or a
+project config at `./opencode.jsonc`. The `file://` package form is for
+development from a checkout.
 
 ```jsonc
 {
@@ -115,11 +155,23 @@ On Windows, use forward slashes or escaped backslashes in JSON:
 }
 ```
 
+### Binary detection
+
+When `binaryPath` is omitted, the adapter checks in this order:
+
+1. The `binaryPath` option.
+2. The `RECOLLECT_BINARY` environment variable.
+3. Each `PATH` directory, including `PATHEXT` entries on Windows.
+4. `~/.local/bin/recollect` or
+   `%LOCALAPPDATA%\Programs\recollect\recollect.exe`.
+
+If none exist, the plugin fails with an error that names all four checks.
+
 ### Options
 
 | Option                  | Required | Meaning                                                                                        |
 | ----------------------- | -------- | ---------------------------------------------------------------------------------------------- |
-| `binaryPath`            | Yes      | Absolute path to the `recollect` binary.                                                       |
+| `binaryPath`            | No       | Absolute path to the `recollect` binary. Omit it to use the detection order above.             |
 | `userDir`               | No       | Shared user memory root. Defaults to `~/.recollect` or `%LOCALAPPDATA%\recollect`.             |
 | `generationPolicy`      | No       | `host` lets the adapter call the session model for capture. `off` disables it. Default `host`. |
 | `generationTimeoutMs`   | No       | Per-call generation budget from 1 through 120000. Default 120000.                              |
