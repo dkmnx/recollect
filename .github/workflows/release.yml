@@ -23,11 +23,13 @@ jobs:
         run: go test ./... -count=1
       - name: Run test audit check
         run: go run ./tools/checktestaudit
+      - name: Extract release notes
+        run: ./scripts/release-notes.sh "${GITHUB_REF_NAME}" > "${RUNNER_TEMP}/release-notes.md"
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --clean
+          args: release --clean --release-notes ${{ runner.temp }}/release-notes.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

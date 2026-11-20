@@ -35,7 +35,56 @@ checksum:
 
 changelog:
   use: github
+  abbrev: -1
+  format: "{{ .Message }}{{ if .Logins }} ({{ .Logins | englishJoin }}){{ end }}"
+  groups:
+    - title: Breaking changes
+      regexp: '^.*?[a-z]+(\([[:word:]]+\))?!:.*$'
+      order: 0
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))?:.*$'
+      order: 1
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))?:.*$'
+      order: 2
+    - title: Performance
+      regexp: '^.*?perf(\([[:word:]]+\))?:.*$'
+      order: 3
+    - title: Other changes
+      order: 999
+  filters:
+    exclude:
+      - '^docs(\(|:)'
+      - '^test(\(|:)'
+      - '^ci(\(|:)'
+      - '^chore(\(|:)'
+      - '^style(\(|:)'
+      - '^build(\(|:)'
+      - '^release(\(|:)'
+      - '^Merge '
+      - '^Initial commit'
 
 release:
   draft: false
   prerelease: auto
+  mode: replace
+  header: |
+    ## Recollect {{ .Tag }}
+
+    Memory for coding agents: Markdown facts, ranked search, privacy filters,
+    and a stdio engine.
+  footer: |
+    ## Install
+
+    ```sh
+    go install github.com/dkmnx/recollect/cmd/recollect@{{ .Tag }}
+    ```
+
+    Or use the checksum-verified installer:
+
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh | sh -s -- --version {{ .Tag }}
+    ```
+
+    Verify downloads with `checksums.txt`. See the
+    [installation guide](https://github.com/dkmnx/recollect#installation).
