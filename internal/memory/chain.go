@@ -25,6 +25,7 @@ const chainMaxPaths = 256
 // ChainRevision is one applied edit: the file, the session that applied
 // it, and the replaced text pair exactly as the tool call carried them.
 type ChainRevision struct {
+	ID        string    `json:"id,omitempty"`
 	Path      string    `json:"path"`
 	SessionID string    `json:"sessionID,omitempty"`
 	At        time.Time `json:"at"`
@@ -32,10 +33,11 @@ type ChainRevision struct {
 	NewText   string    `json:"newText"`
 }
 
-// AppendChainRevisions appends revisions in order, rotating at the bound.
+// AppendChainRevisions appends new revisions in order, rotating at the bound.
 // The whole batch lands through one write, so a failure leaves no partial
-// batch for a retry to duplicate; the caller turns an error into a
-// warning, never a failed phase.
+// batch for a retry to duplicate. A revision with an ID already on disk is
+// skipped, so a replay of an applied job cannot double a revision. The caller
+// turns an error into a warning, never a failed phase.
 func (s *Store) AppendChainRevisions(revisions []ChainRevision) error {
 	if len(revisions) == 0 {
 		return nil
@@ -43,17 +45,42 @@ func (s *Store) AppendChainRevisions(revisions []ChainRevision) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	path := ChainFile(s.projectDir)
-	if info, err := os.Lstat(path); err == nil && info.Size() >= chainRotateBytes {
-		prev := filepath.Join(s.projectDir, chainPrevFile)
-		_ = os.Remove(prev)
-		_ = os.Rename(path, prev)
-	}
 	current, err := readMemoryFile(path)
 	if err != nil {
 		return err
 	}
-	var b strings.Builder
-	b.WriteString(current)
+	previous, _ := readMemoryFile(filepath.Join(s.projectDir, chainPrevFile))
+	if current == "" && previous != "" {
+		if err := s.writeLocked(path, previous); err != nil {
+			return err
+		}
+		current = previous
+	}
+	seen := make(map[string]bool)
+	key := func(revision ChainRevision, line string) string {
+		if revision.ID != "" {
+			return "id:" + revision.ID
+		}
+		return "line:" + line
+	}
+	addSeen := func(content string) {
+		for _, line := range strings.Split(content, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				continue
+			}
+			var existing ChainRevision
+			if json.Unmarshal([]byte(trimmed), &existing) == nil {
+				seen[key(existing, trimmed)] = true
+			} else {
+				seen["line:"+trimmed] = true
+			}
+		}
+	}
+	addSeen(current)
+	addSeen(previous)
+
+	fresh := make([]string, 0, len(revisions))
 	for _, revision := range revisions {
 		if revision.At.IsZero() {
 			revision.At = s.now()
@@ -63,7 +90,32 @@ func (s *Store) AppendChainRevisions(revisions []ChainRevision) error {
 		if err != nil {
 			return err
 		}
-		b.WriteString(string(line) + "\n")
+		text := string(line)
+		revisionKey := key(revision, text)
+		if seen[revisionKey] {
+			continue
+		}
+		seen[revisionKey] = true
+		fresh = append(fresh, text)
+	}
+	if len(fresh) == 0 {
+		return nil
+	}
+	rotated := false
+	if info, err := os.Lstat(path); err == nil && info.Size() >= chainRotateBytes {
+		// Rename replaces an existing prev file on both POSIX and Windows.
+		// Removing first would destroy the old segment when the rename fails.
+		prev := filepath.Join(s.projectDir, chainPrevFile)
+		if err := os.Rename(path, prev); err == nil {
+			rotated = true
+		}
+	}
+	var b strings.Builder
+	if !rotated {
+		b.WriteString(current)
+	}
+	for _, text := range fresh {
+		b.WriteString(text + "\n")
 	}
 	return s.writeLocked(path, b.String())
 }

@@ -6,7 +6,6 @@ package memory
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 )
 
@@ -55,7 +54,7 @@ type CaptureResult struct {
 // ParseCaptureResult parses the model's consolidation JSON, tolerating code
 // fences, surrounding prose, and near-JSON (unquoted keys, single-quoted or
 // curly-quoted strings, trailing commas). Invalid ops are dropped;
-// unparseable JSON is an error carrying a bounded, redacted excerpt.
+// unparseable JSON is a stable coded error with no model text.
 func ParseCaptureResult(raw string) (CaptureResult, error) {
 	payload, err := extractJSONObject(raw)
 	if err != nil {
@@ -66,7 +65,7 @@ func ParseCaptureResult(raw string) (CaptureResult, error) {
 		Reason string      `json:"reason"`
 	}
 	if err := decodeCaptureJSON(payload, &envelope); err != nil {
-		return CaptureResult{}, Errorf(CodeIO, "capture reply is not valid JSON: %v: %s", err, captureReplyExcerpt(payload))
+		return CaptureResult{}, Errorf(CodeInvalidReply, "capture reply is not valid JSON")
 	}
 	result := CaptureResult{Reason: strings.TrimSpace(envelope.Reason)}
 	for _, op := range envelope.Ops {
@@ -91,11 +90,11 @@ func ParseCaptureDigest(raw string) (topic, summary string, err error) {
 		Summary string `json:"summary"`
 	}
 	if err := decodeCaptureJSON(payload, &envelope); err != nil {
-		return "", "", Errorf(CodeIO, "digest reply is not valid JSON: %v: %s", err, captureReplyExcerpt(payload))
+		return "", "", Errorf(CodeInvalidReply, "digest reply is not valid JSON")
 	}
 	summary = strings.TrimSpace(envelope.Summary)
 	if summary == "" {
-		return "", "", Errorf(CodeIO, "digest reply carries no summary: %s", captureReplyExcerpt(payload))
+		return "", "", Errorf(CodeInvalidReply, "digest reply carries no summary")
 	}
 	return CollapseLine(envelope.Topic), summary, nil
 }
@@ -160,38 +159,21 @@ func NormalizeFactType(raw string) string {
 	return normalized
 }
 
-// captureReplyExcerptBytes bounds what the notice shows of a reply that
-// carried no JSON.
-const captureReplyExcerptBytes = 120
-
-// captureReplyExcerpt quotes a bounded, redacted, single-line view of a
-// reply for the notice line. Redaction is mandatory: the excerpt is
-// user-visible and the model may echo a secret the input redactor missed.
-// The quoting escapes control bytes in untrusted model output.
-func captureReplyExcerpt(reply string) string {
-	excerpt, truncated := HeadBytes(CollapseLine(Redact(reply)), captureReplyExcerptBytes)
-	if truncated {
-		excerpt += "..."
-	}
-	return fmt.Sprintf("%q", excerpt)
-}
-
 // extractJSONObject returns the first {...} span, tolerating code fences and
-// surrounding prose. A reply with no usable object names the shape and
-// carries a bounded, redacted excerpt: capture output is never logged, so
-// this error is the only view of what the model actually returned.
+// surrounding prose. A reply with no usable object returns a stable error
+// code and a fixed diagnostic. Model text never enters durable state.
 func extractJSONObject(raw string) (string, error) {
 	text := strings.TrimSpace(raw)
 	if text == "" {
-		return "", Errorf(CodeIO, "capture reply was empty")
+		return "", Errorf(CodeInvalidReply, "capture reply was empty")
 	}
 	start := strings.Index(text, "{")
 	end := strings.LastIndex(text, "}")
 	switch {
 	case start < 0:
-		return "", Errorf(CodeIO, "capture reply carries no JSON object: %s", captureReplyExcerpt(text))
+		return "", Errorf(CodeInvalidReply, "capture reply carries no JSON object")
 	case end <= start:
-		return "", Errorf(CodeIO, "capture reply has an unclosed JSON object: %s", captureReplyExcerpt(text))
+		return "", Errorf(CodeInvalidReply, "capture reply has an unclosed JSON object")
 	}
 	return text[start : end+1], nil
 }

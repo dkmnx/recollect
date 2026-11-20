@@ -17,7 +17,7 @@ func (e *Engine) factRel(name string) (string, error) {
 		}
 		return "", err
 	}
-	return filepath.ToSlash(filepath.Join(fact.Path, fact.FileName())), nil
+	return fact.RelPath(), nil
 }
 
 func (e *Engine) commit(scope Scope, id, op, name, rel, before string, content []byte, result receiptRecord) error {
@@ -138,6 +138,9 @@ func (e *Engine) AppendFact(req AppendRequest) (AppendResult, error) {
 			name = memory.Fact{Description: req.Description}.FallbackName()
 		}
 		name = memory.NextKey(names, name)
+		if err := memory.ValidateFactName(name); err != nil {
+			return err
+		}
 		rel := name + ".md"
 		prepared := memory.Fact{
 			Name:        name,
@@ -147,6 +150,9 @@ func (e *Engine) AppendFact(req AppendRequest) (AppendResult, error) {
 			Body:        memory.StripPrivateContent(strings.Trim(req.Body, "\n")),
 		}
 		if req.Fact != nil {
+			if err := memory.ValidateFactPath(req.Fact.Path); err != nil {
+				return err
+			}
 			prepared = memory.PrepareForWrite(*req.Fact)
 			prepared.Name = name
 			if prepared.CapturedOn == "" {

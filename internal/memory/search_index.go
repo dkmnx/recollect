@@ -140,18 +140,18 @@ func (idx *searchIndex) embeddingUpdates(corpus []searchFact, stored map[string]
 	if idx.embedder == nil {
 		return updates, nil
 	}
-	embedded := make(map[string]bool)
-	rows, err := idx.db.Query(`SELECT rel FROM search_vec_meta`)
+	embedded := make(map[string]string)
+	rows, err := idx.db.Query(`SELECT rel, hash FROM search_vec_meta`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var rel string
-		if err := rows.Scan(&rel); err != nil {
+		var rel, hash string
+		if err := rows.Scan(&rel, &hash); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		embedded[rel] = true
+		embedded[rel] = hash
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -160,7 +160,7 @@ func (idx *searchIndex) embeddingUpdates(corpus []searchFact, stored map[string]
 	rows.Close()
 	var changed []searchFact
 	for _, fact := range corpus {
-		if stored[fact.RelPath] != fact.SourceHash || !embedded[fact.RelPath] {
+		if stored[fact.RelPath] != fact.SourceHash || embedded[fact.RelPath] != fact.SourceHash {
 			changed = append(changed, fact)
 		}
 	}
@@ -412,7 +412,8 @@ func (idx *searchIndex) semanticCandidates(query, scene string) (map[string]floa
 	}
 	rows, err := idx.db.Query(`SELECT m.rel, v.distance FROM search_vec v
 		JOIN search_vec_meta m ON m.rowid = v.rowid
-		WHERE v.embedding MATCH ? AND v.k = ? AND (m.scene = '' OR m.scene = ?)
+		JOIN search_docs d ON d.rel = m.rel
+		WHERE v.embedding MATCH ? AND v.k = ? AND m.hash = d.hash AND (m.scene = '' OR m.scene = ?)
 		ORDER BY v.distance`, vectorLiteral(vectors[0]), 20, scene)
 	if err != nil {
 		return nil, err

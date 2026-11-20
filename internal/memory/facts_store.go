@@ -78,7 +78,7 @@ func (s *Store) listFactFilesLocked() ([]factFile, error) {
 		return nil, Errorf(CodeIO, "read project dir: %v", err)
 	}
 	for _, entry := range dirEntries {
-		if entry.IsDir() || entry.Name() == indexFileName || !strings.HasSuffix(entry.Name(), markdownExt) {
+		if entry.IsDir() || reservedFactFile(entry.Name()) || !strings.HasSuffix(entry.Name(), markdownExt) {
 			continue
 		}
 		if err := add(entry.Name()); err != nil {
@@ -109,6 +109,16 @@ func (s *Store) listFactFilesLocked() ([]factFile, error) {
 	return files, nil
 }
 
+// reservedFactFile reports a Markdown file the store owns. Case-insensitive
+// because MEMORY.md and memory.md collide on common desktop filesystems.
+func reservedFactFile(name string) bool {
+	switch strings.ToLower(name) {
+	case "memory.md", "corrections.md", ".summary.md":
+		return true
+	}
+	return false
+}
+
 func parseFactBytes(rel string, raw string, mod time.Time) Fact {
 	fact := ParseFact(raw)
 	base := strings.TrimSuffix(filepath.Base(rel), markdownExt)
@@ -126,6 +136,7 @@ func parseFactBytes(rel string, raw string, mod time.Time) Fact {
 		fact.Path = ""
 	}
 	fact.ModTime = mod
+	fact.relPath = filepath.ToSlash(rel)
 	return fact
 }
 
@@ -171,6 +182,27 @@ func (s *Store) ReadFact(name string) (Fact, error) {
 		return Fact{}, Errorf(CodeFactNotFound, "no fact named %q", name)
 	}
 	return *fact, nil
+}
+
+// ReadFactWithBytes returns a fact and the exact bytes it was parsed from.
+// Enumeration applies the same file checks as ReadFact, and parseFactBytes
+// supplies the fallback name and description for facts without frontmatter.
+func (s *Store) ReadFactWithBytes(name string) (Fact, []byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fact, err := s.findFactLocked(FactSlug(name))
+	if err != nil {
+		return Fact{}, nil, err
+	}
+	if fact == nil {
+		return Fact{}, nil, Errorf(CodeFactNotFound, "no fact named %q", name)
+	}
+	rel := fact.RelPath()
+	raw, err := readMemoryFile(filepath.Join(s.projectDir, filepath.FromSlash(rel)))
+	if err != nil {
+		return Fact{}, nil, err
+	}
+	return parseFactBytes(rel, raw, fact.ModTime), []byte(raw), nil
 }
 
 // AppendFact writes a new fact, never overwriting: a name taken anywhere in
@@ -250,6 +282,7 @@ func (s *Store) UpsertFact(fact Fact) (Fact, error) {
 	existing := findFactIn(facts, prepared.Name)
 	if existing != nil {
 		prepared.Path = existing.Path
+		prepared.relPath = existing.RelPath()
 		prepared.CapturedOn = existing.CapturedOn
 	} else if prepared.CapturedOn == "" {
 		prepared.CapturedOn = s.now().Format(time.DateOnly)
@@ -354,6 +387,7 @@ func (s *Store) MoveFactToTopic(name, topic string) (Fact, error) {
 		return *existing, nil
 	}
 	moved := *existing
+	moved.relPath = ""
 	moved.Path = topicsDirName + "/" + topic
 	taken, err := s.topicFactNamesLocked(topic)
 	if err != nil {
@@ -490,19 +524,6 @@ func findFactIn(facts []Fact, name string) *Fact {
 	return match
 }
 
-// factNamesLocked maps every fact name in the project.
-func (s *Store) factNamesLocked() (map[string]bool, error) {
-	facts, err := s.listFactsLocked()
-	if err != nil {
-		return nil, err
-	}
-	names := make(map[string]bool, len(facts))
-	for _, fact := range facts {
-		names[fact.Name] = true
-	}
-	return names, nil
-}
-
 // topicFactNamesLocked maps the fact names inside one topic.
 func (s *Store) topicFactNamesLocked(topic string) (map[string]bool, error) {
 	files, err := os.ReadDir(filepath.Join(TopicsDir(s.projectDir), topic))
@@ -524,17 +545,25 @@ func (s *Store) topicFactNamesLocked(topic string) (map[string]bool, error) {
 // writeFactLocked renders and writes one fact file, then regenerates the
 // index. Callers hold the lock.
 func (s *Store) writeFactLocked(fact Fact) error {
-	dir := s.projectDir
-	if fact.Path != "" {
-		dir = filepath.Join(s.projectDir, filepath.FromSlash(fact.Path))
-	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return Errorf(CodeIO, "create %s: %v", dir, err)
-	}
-	if err := s.writeLocked(filepath.Join(dir, fact.FileName()), FormatFact(fact)); err != nil {
+	if err := s.writeFactFileLocked(fact); err != nil {
 		return err
 	}
 	return s.regenerateIndexLocked()
+}
+
+// writeFactFileLocked writes one fact file without touching the index.
+// Migration batches use it so a mid-batch failure leaves the legacy index in
+// place for a retry. Callers hold the lock.
+func (s *Store) writeFactFileLocked(fact Fact) error {
+	if err := ValidateFactName(fact.Name); err != nil {
+		return err
+	}
+	rel := fact.RelPath()
+	target := filepath.Join(s.projectDir, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return Errorf(CodeIO, "create %s: %v", filepath.Dir(target), err)
+	}
+	return s.writeLocked(target, FormatFact(fact))
 }
 
 // regenerateIndexLocked rewrites MEMORY.md from the fact files and takes
@@ -559,13 +588,40 @@ func (s *Store) regenerateIndexLocked() error {
 // prepareNewFact validates a fact for a create-or-replace write.
 func prepareNewFact(fact Fact) (Fact, error) {
 	prepared := prepareFact(fact)
+	prepared.relPath = ""
 	if prepared.Description == "" {
 		return Fact{}, &Error{Code: CodeMissingField, Message: "description is required"}
 	}
-	if fact.Path != "" && (!strings.HasPrefix(fact.Path, topicsDirName+"/") || !ValidTopicName(strings.TrimPrefix(fact.Path, topicsDirName+"/"))) {
-		return Fact{}, &Error{Code: CodeInvalidTopic, Message: "invalid topic path: " + fact.Path}
+	if err := ValidateFactPath(fact.Path); err != nil {
+		return Fact{}, err
+	}
+	if ValidateFactName(prepared.Name) != nil {
+		return Fact{}, Errorf(CodeInvalidTopic, "reserved fact name: %s", prepared.Name)
 	}
 	return prepared, nil
+}
+
+// ValidateFactPath accepts an empty root path or a valid topics/<name> path.
+func ValidateFactPath(path string) error {
+	if path == "" {
+		return nil
+	}
+	if !strings.HasPrefix(path, topicsDirName+"/") {
+		return &Error{Code: CodeInvalidTopic, Message: "invalid topic path: " + path}
+	}
+	if !ValidTopicName(strings.TrimPrefix(path, topicsDirName+"/")) {
+		return &Error{Code: CodeInvalidTopic, Message: "invalid topic path: " + path}
+	}
+	return nil
+}
+
+// ValidateFactName rejects names whose files collide with store-owned files.
+func ValidateFactName(name string) error {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "memory", "corrections":
+		return Errorf(CodeInvalidTopic, "reserved fact name: %s", name)
+	}
+	return nil
 }
 
 // firstNonEmptyLine returns the first non-empty line.

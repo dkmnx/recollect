@@ -164,13 +164,58 @@ func (e *Engine) ReadRevisionForScope(scope Scope, name string) (Revision, error
 			if err != nil {
 				return err
 			}
-			rel = filepath.ToSlash(filepath.Join(fact.Path, fact.FileName()))
+			rel = fact.RelPath()
 		}
 		data, err := os.ReadFile(filepath.Join(e.scopeDir(scope), filepath.FromSlash(rel)))
 		if err != nil {
 			return err
 		}
 		result = hashRevision(rel, data)
+		return nil
+	})
+	return result, err
+}
+
+// ReadResult is one record's bytes and the revision of those same bytes.
+type ReadResult struct {
+	Name     string
+	Content  string
+	Revision Revision
+	Fact     *memory.Fact
+}
+
+// Read recovers pending work, then reads one record and its revision under
+// the same lock. Recovery runs before the read, so the returned bytes and
+// revision both describe the recovered state.
+func (e *Engine) Read(scope Scope, name string) (ReadResult, error) {
+	scope = scopeOrProject(scope)
+	var result ReadResult
+	err := e.withLock(scope, func() error {
+		var rel string
+		var data []byte
+		if scope == ScopeProject {
+			fact, raw, err := e.store.ReadFactWithBytes(name)
+			if err != nil {
+				return err
+			}
+			result.Name = fact.Name
+			result.Fact = &fact
+			rel = fact.RelPath()
+			data = raw
+		} else {
+			result.Name = "user"
+			rel = "user.md"
+			raw, err := e.store.ReadUserBytes()
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			if err != nil {
+				return err
+			}
+			data = raw
+		}
+		result.Revision = hashRevision(rel, data)
+		result.Content = string(data)
 		return nil
 	})
 	return result, err

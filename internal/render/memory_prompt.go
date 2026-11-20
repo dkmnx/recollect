@@ -44,7 +44,8 @@ func userMemoryBlock(store *memory.Store, user string, limits memory.Limits) str
 	if strings.TrimSpace(user) == "" {
 		return ""
 	}
-	body, truncated := memory.TailBytes(user, limits.UserInjectBytes)
+	filtered := memory.Redact(memory.StripPrivateContent(user))
+	body, truncated := memory.TailBytes(filtered, limits.UserInjectBytes)
 	if truncated {
 		body += "\n\n[truncated; full file: " + store.UserPath() + "]"
 	}

@@ -53,7 +53,7 @@ func ParsePageDrafts(raw string) (PageDraftResult, error) {
 		Reason string `json:"reason"`
 	}
 	if err := decodeCaptureJSON(payload, &envelope); err != nil {
-		return PageDraftResult{}, Errorf(CodeIO, "page reply is not valid JSON: %v: %s", err, captureReplyExcerpt(payload))
+		return PageDraftResult{}, Errorf(CodeInvalidReply, "page reply is not valid JSON")
 	}
 	result := PageDraftResult{Reason: strings.TrimSpace(envelope.Reason)}
 	for _, page := range envelope.Pages {

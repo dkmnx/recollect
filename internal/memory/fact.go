@@ -79,6 +79,9 @@ type Fact struct {
 	// ModTime is the file's modification time; zero for facts not read from
 	// disk. It orders the index, newest first.
 	ModTime time.Time
+	// relPath is the selected file's real path. A handwritten file such as
+	// Guide.md keeps its case even when the slug is guide.
+	relPath string
 }
 
 // FileName is the fact's file name, including the markdown extension.
@@ -86,6 +89,9 @@ func (f Fact) FileName() string { return f.Name + ".md" }
 
 // RelPath is the file's path relative to the project directory.
 func (f Fact) RelPath() string {
+	if f.relPath != "" {
+		return f.relPath
+	}
 	if f.Path == "" {
 		return f.FileName()
 	}
@@ -283,13 +289,23 @@ func SlugKey(text string, max int) string {
 	return slug
 }
 
-// NextKey returns base when free, else the first free base-N suffix.
+// suffixReserve leaves room for a collision suffix inside the name cap. Slug
+// a base to the full cap here and the first "-2" would be trimmed back to the
+// base on write, so a later append would target the same file.
+const suffixReserve = 4
+
+// NextKey slugs base to the name cap. A free slug stays as-is; a taken slug
+// gets a numeric suffix and only its stem shortens, so every suffixed name
+// survives write-time normalization while existing long names stay intact.
 func NextKey(existing map[string]bool, base string) string {
+	base = SlugKey(base, maxFactNameBytes)
 	if !existing[base] {
 		return base
 	}
+	stem := SlugKey(base, maxFactNameBytes-suffixReserve)
 	for i := 2; ; i++ {
-		candidate := fmt.Sprintf("%s-%d", base, i)
+		suffix := fmt.Sprintf("-%d", i)
+		candidate := SlugKey(stem, maxFactNameBytes-len(suffix)) + suffix
 		if !existing[candidate] {
 			return candidate
 		}

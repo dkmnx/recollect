@@ -12,6 +12,7 @@ type (
 	CorrectRequest = internalengine.CorrectRequest
 	DeleteRequest  = internalengine.DeleteRequest
 	Engine         = internalengine.Engine
+	ReadResult     = internalengine.ReadResult
 )
 
 // Scope values selecting the shared store a request writes.

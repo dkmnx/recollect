@@ -50,6 +50,7 @@ const (
 	CodeDisabled               = internalmemory.CodeDisabled
 	CodeFactNotFound           = internalmemory.CodeFactNotFound
 	CodeInvalidOperation       = internalmemory.CodeInvalidOperation
+	CodeInvalidReply           = internalmemory.CodeInvalidReply
 	CodeIO                     = internalmemory.CodeIO
 	CodeMissingField           = internalmemory.CodeMissingField
 	CodeOldAmbiguous           = internalmemory.CodeOldAmbiguous

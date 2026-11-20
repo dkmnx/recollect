@@ -129,3 +129,102 @@ func TestNewStoreMigratesAutomatically(t *testing.T) {
 		t.Fatalf("auto migration did not convert: %v", err)
 	}
 }
+
+// audit: behavior - a legacy index entry named corrections is written under a non-reserved name.
+// audit: regression - corrections.md was written then deleted by the legacy cleanup.
+// audit: coverage gap - no migration test used a reserved store name as an entry key.
+// audit: seam - MigrateLegacyIfPresent over a MEMORY.md entry named corrections.
+func TestMigrateLegacyReservedEntryName(t *testing.T) {
+	store, _, projectDir := newTestStore(t, memory.Limits{})
+	if err := os.WriteFile(filepath.Join(projectDir, "MEMORY.md"),
+		[]byte("## corrections — notes about fixes\nType: fact\n\nbody text\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.MigrateLegacyIfPresent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Facts != 1 {
+		t.Fatalf("facts = %+v", result)
+	}
+	if _, err := store.ReadFact("corrections-fact"); err != nil {
+		t.Fatalf("renamed fact missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(projectDir, "corrections.md")); !os.IsNotExist(err) {
+		t.Fatalf("legacy corrections file survived: %v", err)
+	}
+}
+
+// audit: behavior - a failed migration keeps the legacy inputs for a successful retry.
+// audit: regression - corrections.md was removed before the fact write, so the retry folded nothing.
+// audit: coverage gap - no migration test retried after a write failure.
+// audit: seam - MigrateLegacyIfPresent with a blocked target then a cleared target.
+func TestMigrateRetryKeepsLegacyInputs(t *testing.T) {
+	store, _, projectDir := newTestStore(t, memory.Limits{})
+	legacyProject(t, projectDir)
+	blocked := filepath.Join(projectDir, "redis-tuning.md")
+	if err := os.MkdirAll(blocked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MigrateLegacyIfPresent(); err == nil {
+		t.Fatal("blocked migration did not fail")
+	}
+	if err := os.Remove(blocked); err != nil {
+		t.Fatal(err)
+	}
+	result, err := store.MigrateLegacyIfPresent()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.CorrectionsFolded != 1 {
+		t.Fatalf("retry folded %d corrections, want 1", result.CorrectionsFolded)
+	}
+	if _, err := store.ReadFact("redis-tuning"); err != nil {
+		t.Fatalf("migrated fact missing: %v", err)
+	}
+}
+
+// audit: behavior - a mid-batch migration failure keeps the legacy index for a retry that reuses converted names.
+// audit: regression - per-fact index regeneration erased the legacy headings, so the retry dropped later entries.
+// audit: coverage gap - the retry test blocked the first write, before any index rewrite.
+// audit: seam - MigrateLegacyIfPresent with the second fact target blocked, then cleared.
+func TestMigrateMidBatchRetryReusesEntries(t *testing.T) {
+	store, _, projectDir := newTestStore(t, memory.Limits{})
+	legacyProject(t, projectDir)
+	blocked := filepath.Join(projectDir, "old-note.md")
+	if err := os.MkdirAll(blocked, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MigrateLegacyIfPresent(); err == nil {
+		t.Fatal("mid-batch migration did not fail")
+	}
+	if err := os.Remove(blocked); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.MigrateLegacyIfPresent(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.ReadFact("old-note"); err != nil {
+		t.Fatalf("later legacy entry lost: %v", err)
+	}
+	alpha, err := store.ReadFact("redis-tuning")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count := strings.Count(alpha.Body, "Correction:"); count != 1 {
+		t.Fatalf("correction folded %d times: %q", count, alpha.Body)
+	}
+	facts, err := store.ListFacts()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fact := range facts {
+		if strings.HasSuffix(fact.Name, "-2") {
+			t.Fatalf("retry created a duplicate fact: %+v", fact)
+		}
+	}
+	archives, err := filepath.Glob(filepath.Join(projectDir, "archive", "legacy-*", "MEMORY.md"))
+	if err != nil || len(archives) != 2 {
+		t.Fatalf("same-second retry did not keep both archives: %v (%v)", archives, err)
+	}
+}

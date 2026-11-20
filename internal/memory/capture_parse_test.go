@@ -63,23 +63,19 @@ func TestParseCaptureResultRepairsInvalidEscapes(t *testing.T) {
 
 // TestExtractJSONObjectDiagnosesShape pins the no-JSON diagnosis: the
 // shapes an unparseable capture reply takes must be distinguishable, and the
-// error must carry a bounded, redacted excerpt of what the model actually
-// said. Capture output is never logged, so the notice is the only
-// diagnostic surface.
+// error must use a stable code and carry no model text.
 func TestExtractJSONObjectDiagnosesShape(t *testing.T) {
 	long := strings.Repeat("a", 200) + "TAILMARKER"
 	cases := []struct {
 		name string
 		raw  string
-		want string // the cause the error must name
-		has  string // text the excerpt must carry
-		miss string // text that must not reach the notice
+		want string
 	}{
 		{name: "empty reply", raw: "  \n ", want: "empty"},
-		{name: "prose", raw: "Nothing worth saving this turn.", want: "no JSON object", has: "Nothing worth saving"},
-		{name: "unclosed object", raw: `{"ops":[{"action":"add"`, want: "unclosed", has: "action"},
-		{name: "redacted secret", raw: "summary: api_key = abcdef0123456789", want: "no JSON object", has: memory.RedactedPlaceholder, miss: "abcdef0123456789"},
-		{name: "bounded excerpt", raw: long, want: "no JSON object", has: "aaaaaaaa", miss: "TAILMARKER"},
+		{name: "prose", raw: "Nothing worth saving this turn.", want: "no JSON object"},
+		{name: "unclosed object", raw: `{"ops":[{"action":"add"`, want: "unclosed"},
+		{name: "secret in prose", raw: "summary: api_key = abcdef0123456789", want: "no JSON object"},
+		{name: "long prose", raw: long, want: "no JSON object"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -91,11 +87,13 @@ func TestExtractJSONObjectDiagnosesShape(t *testing.T) {
 			if !strings.Contains(msg, tc.want) {
 				t.Fatalf("err = %q, want it to name %q", msg, tc.want)
 			}
-			if tc.has != "" && !strings.Contains(msg, tc.has) {
-				t.Fatalf("err = %q, want the excerpt to carry %q", msg, tc.has)
+			if !strings.Contains(msg, "INVALID_REPLY") {
+				t.Fatalf("err = %q, want a stable reply code", msg)
 			}
-			if tc.miss != "" && strings.Contains(msg, tc.miss) {
-				t.Fatalf("err = %q, must not carry %q", msg, tc.miss)
+			for _, forbidden := range []string{"Nothing worth saving", "abcdef0123456789", "TAILMARKER"} {
+				if strings.Contains(msg, forbidden) {
+					t.Fatalf("err = %q, carried model text %q", msg, forbidden)
+				}
 			}
 		})
 	}
@@ -166,13 +164,11 @@ func TestParseCaptureResultStrictStillWins(t *testing.T) {
 	}
 }
 
-func TestParseCaptureResultErrorCarriesExcerpt(t *testing.T) {
+func TestParseCaptureResultErrorUsesStableCode(t *testing.T) {
 	_, err := memory.ParseCaptureResult("plain prose only, no braces at all")
 	if err == nil || !strings.Contains(err.Error(), `carries no JSON object`) {
 		t.Fatalf("err = %v", err)
 	}
-	// An unparseable object surfaces the redacted excerpt, not just the
-	// decoder position.
 	_, err = memory.ParseCaptureResult("{ops:}")
 	if err == nil || !strings.Contains(err.Error(), "not valid JSON") {
 		t.Fatalf("err = %v", err)
@@ -188,8 +184,8 @@ func TestParseCaptureDigestNearJSON(t *testing.T) {
 		t.Fatalf("digest = %q / %q", topic, summary)
 	}
 	_, _, err = memory.ParseCaptureDigest("{topic: t}")
-	if err == nil || !strings.Contains(err.Error(), "carries no summary") || !strings.Contains(err.Error(), "{topic: t}") {
-		t.Fatalf("missing-summary error should quote the excerpt: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "carries no summary") || !strings.Contains(err.Error(), "INVALID_REPLY") {
+		t.Fatalf("missing-summary error = %v", err)
 	}
 }
 

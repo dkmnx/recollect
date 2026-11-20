@@ -111,13 +111,28 @@ func (s *Store) Meta() ProjectMeta {
 // ReadUser returns the global user memory, or "" when absent.
 func (s *Store) ReadUser() (string, error) { return readMemoryFile(UserFile(s.userDir)) }
 
+// ReadUserBytes reads user.md through the same file checks as ReadUser and
+// returns the bytes a revision can be computed from. A missing file returns
+// os.ErrNotExist.
+func (s *Store) ReadUserBytes() ([]byte, error) {
+	path := UserFile(s.userDir)
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil, err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+		return nil, &Error{Code: CodeFileInvalid, Message: "memory file is not a regular file: " + path}
+	}
+	return os.ReadFile(path)
+}
+
 // SearchUser finds matches in the user memory, capped by MaxSearchResults.
 func (s *Store) SearchUser(query string) ([]Match, error) {
 	content, err := s.ReadUser()
 	if err != nil {
 		return nil, err
 	}
-	return SearchLines(content, query, s.limits.MaxSearchResults), nil
+	return SearchLines(filterSearchText(content), query, s.limits.MaxSearchResults), nil
 }
 
 // userAppendLocks serializes user.md read-modify-write cycles across every

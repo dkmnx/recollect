@@ -13,6 +13,7 @@ const (
 	CodeInvalidOperation = "INVALID_OPERATION"
 	CodeMissingField     = "MISSING_FIELD"
 	CodeInvalidTopic     = "INVALID_TOPIC"
+	CodeInvalidReply     = "INVALID_REPLY"
 	CodeReasonRequired   = "REASON_REQUIRED"
 	CodeOldNotFound      = "OLD_NOT_FOUND"
 	CodeOldAmbiguous     = "OLD_AMBIGUOUS"

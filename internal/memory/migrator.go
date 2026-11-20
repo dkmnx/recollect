@@ -9,6 +9,7 @@
 package memory
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -136,14 +137,34 @@ func (s *Store) migrateLocked(legacy legacyStore) (MigrateResult, error) {
 	}
 
 	writeBatch := func(entries []legacyEntry, dir string) error {
+		facts, err := s.listFactsLocked()
+		if err != nil {
+			return err
+		}
+		onDisk := make(map[string]Fact, len(facts))
+		taken := make(map[string]bool, len(facts))
+		for _, existing := range facts {
+			onDisk[existing.Name] = existing
+			taken[existing.Name] = true
+		}
 		for _, entry := range entries {
 			fact, err := s.legacyFact(entry, dir)
 			if err != nil {
 				return err
 			}
-			if err := s.writeFactLocked(fact); err != nil {
+			if existing, ok := onDisk[fact.Name]; ok {
+				// A partial pass may have written this entry already. Reuse
+				// its name when the converted output matches; suffix only a
+				// real conflict.
+				if existing.Path != dir || existing.Body != fact.Body || existing.Description != fact.Description {
+					fact.Name = NextKey(taken, fact.Name)
+				}
+			}
+			if err := s.writeFactFileLocked(fact); err != nil {
 				return err
 			}
+			taken[fact.Name] = true
+			onDisk[fact.Name] = fact
 			result.Facts++
 		}
 		return nil
@@ -161,14 +182,7 @@ func (s *Store) migrateLocked(legacy legacyStore) (MigrateResult, error) {
 		}
 	}
 
-	// Retire the legacy files last; MEMORY.md is not removed here because
-	// the regenerated index overwrites it.
-	if err := os.Remove(filepath.Join(s.projectDir, legacyCorrectionsFile)); err != nil && !os.IsNotExist(err) {
-		return result, Errorf(CodeIO, "remove legacy corrections: %v", err)
-	}
-	if err := os.Remove(filepath.Join(s.projectDir, legacySummaryFile)); err != nil && !os.IsNotExist(err) {
-		return result, Errorf(CodeIO, "remove legacy summary: %v", err)
-	}
+	// MEMORY.md is not removed here because the regenerated index overwrites it.
 	for topic := range legacy.topics {
 		if err := os.Remove(filepath.Join(TopicsDir(s.projectDir), topic+legacyTopicExt)); err != nil && !os.IsNotExist(err) {
 			return result, Errorf(CodeIO, "remove legacy topic: %v", err)
@@ -177,6 +191,14 @@ func (s *Store) migrateLocked(legacy legacyStore) (MigrateResult, error) {
 	if err := s.regenerateIndexLocked(); err != nil {
 		return result, err
 	}
+	// Retire the legacy inputs only after the converted facts and index land.
+	// A failed pass keeps them, so a retry folds the same corrections.
+	if err := os.Remove(filepath.Join(s.projectDir, legacyCorrectionsFile)); err != nil && !os.IsNotExist(err) {
+		return result, Errorf(CodeIO, "remove legacy corrections: %v", err)
+	}
+	if err := os.Remove(filepath.Join(s.projectDir, legacySummaryFile)); err != nil && !os.IsNotExist(err) {
+		return result, Errorf(CodeIO, "remove legacy summary: %v", err)
+	}
 	return result, nil
 }
 
@@ -184,7 +206,14 @@ func (s *Store) migrateLocked(legacy legacyStore) (MigrateResult, error) {
 // archive/legacy-<timestamp>/, keeping the originals in place until the
 // conversion succeeds.
 func (s *Store) archiveLegacyLocked() error {
-	archiveDir := filepath.Join(ArchiveDir(s.projectDir), "legacy-"+s.now().Format("20060102T150405"))
+	stamp := s.now().Format("20060102T150405")
+	archiveDir := filepath.Join(ArchiveDir(s.projectDir), "legacy-"+stamp)
+	for suffix := 2; ; suffix++ {
+		if _, err := os.Stat(archiveDir); os.IsNotExist(err) {
+			break
+		}
+		archiveDir = filepath.Join(ArchiveDir(s.projectDir), fmt.Sprintf("legacy-%s-%d", stamp, suffix))
+	}
 	if err := os.MkdirAll(archiveDir, 0o755); err != nil {
 		return Errorf(CodeIO, "create legacy archive: %v", err)
 	}
@@ -233,11 +262,9 @@ func (s *Store) legacyFact(entry legacyEntry, dir string) (Fact, error) {
 		Type:        FactTypeProject,
 		Body:        entry.Body,
 	})
-	taken, err := s.factNamesLocked()
-	if err != nil {
-		return Fact{}, err
+	if ValidateFactName(fact.Name) != nil {
+		fact.Name = fact.Name + "-fact"
 	}
-	fact.Name = NextKey(taken, fact.Name)
 	fact.Path = dir
 	return fact, nil
 }
