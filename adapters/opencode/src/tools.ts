@@ -33,9 +33,12 @@ export const memoryToolDefinition = {
   options: TOOL_OPTIONS,
   execute: (args: unknown, client: { memoryExecute(params: unknown): Promise<any> }) =>
     Effect.promise(() => client.memoryExecute(args)).pipe(
-      Effect.map((result: any) =>
-        typeof result?.content === "string" ? { content: result.content } : { content: JSON.stringify(result) },
-      ),
+      Effect.map((result: any) => {
+        const content = typeof result?.content === "string" ? result.content : JSON.stringify(result) ?? "";
+        const revision = typeof result?.revision === "string" ? result.revision : "";
+        if (!revision) return { content };
+        return { content: content + "\n\nrevision: " + revision, revision };
+      }),
     ),
 };
 

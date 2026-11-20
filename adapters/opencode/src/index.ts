@@ -50,6 +50,7 @@ export const RecollectPlugin = Plugin.define({
       yield* Effect.promise(() =>
         client.initialize({
           projectDir: config.projectDir,
+          projectRoot: config.projectRoot,
           userDir: config.userDir,
           harnessID: config.harnessID,
           capabilities,

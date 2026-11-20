@@ -1,5 +1,6 @@
 // Resolves plugin options and host location into bound engine roots.
 
+import { createHash } from "node:crypto";
 import { posix, win32 } from "node:path";
 
 export interface PluginOptions {
@@ -23,6 +24,7 @@ export interface HostEnv {
 export interface ResolvedConfig {
   binaryPath: string;
   projectDir: string;
+  projectRoot: string;
   userDir: string;
   directory: string;
   workspaceID: string;
@@ -59,8 +61,12 @@ export function resolveConfig(
   const binaryPath = options.binaryPath?.trim();
   if (!binaryPath) throw new ConfigError("binaryPath is required");
 
-  const projectDir = location.project?.canonical?.trim();
-  if (!projectDir) throw new ConfigError("project canonical root is required");
+  const projectRoot = location.project?.canonical?.trim();
+  if (!projectRoot) throw new ConfigError("project canonical root is required");
+  const userDir = options.userDir?.trim() || computeUserRoot(host.platform, host.env);
+  const joinPath = host.platform === "win32" ? win32.join : posix.join;
+  const projectID = createHash("sha256").update(projectRoot).digest("hex").slice(0, 16);
+  const projectDir = joinPath(userDir, "projects", projectID);
 
   const generationPolicy = options.generationPolicy ?? "host";
   if (generationPolicy !== "host" && generationPolicy !== "off") {
@@ -74,8 +80,9 @@ export function resolveConfig(
   return {
     binaryPath,
     projectDir,
-    userDir: options.userDir?.trim() || computeUserRoot(host.platform, host.env),
-    directory: location.directory ?? projectDir,
+    projectRoot,
+    userDir,
+    directory: location.directory ?? projectRoot,
     workspaceID: location.workspaceID ?? "",
     harnessID: "opencode",
     capabilities: ["generation", "events", "context"],

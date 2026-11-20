@@ -45,7 +45,8 @@ describe("resolveConfig", () => {
       { platform: "win32", env: { LOCALAPPDATA: "C:\\AppData\\Local" } },
     );
     expect(config.binaryPath).toBe("C:\\tools\\recollect.exe");
-    expect(config.projectDir).toBe("C:\\work\\demo");
+    expect(config.projectRoot).toBe("C:\\work\\demo");
+    expect(config.projectDir).not.toBe("C:\\work\\demo");
     expect(config.userDir).toBe("C:\\AppData\\Local\\recollect");
     expect(config.workspaceID).toBe("ws-1");
   });
@@ -57,7 +58,8 @@ describe("resolveConfig", () => {
       { platform: "linux", env: { HOME: "/home/u" } },
     );
     expect(config.userDir).toBe("/srv/memory");
-    expect(config.projectDir).toBe("/work/demo");
+    expect(config.projectRoot).toBe("/work/demo");
+    expect(config.projectDir).not.toBe("/work/demo");
   });
 
   test("defaults generation policy to host and timeout to 120000", () => {
