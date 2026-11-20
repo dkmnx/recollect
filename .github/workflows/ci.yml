@@ -82,6 +82,18 @@ jobs:
       - name: Run adapter tests
         run: bun test
 
+  release-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate GoReleaser config
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check
+
   static-analysis:
     runs-on: ubuntu-latest
     timeout-minutes: 20
