@@ -112,6 +112,7 @@ var (
 	JournalFile              = internalmemory.JournalFile
 	MemoryRoot               = internalmemory.MemoryRoot
 	NewStore                 = internalmemory.NewStore
+	NewReadOnlyStore         = internalmemory.NewReadOnlyStore
 	NextKey                  = internalmemory.NextKey
 	NormalizeFactType        = internalmemory.NormalizeFactType
 	NormalizeNewlines        = internalmemory.NormalizeNewlines

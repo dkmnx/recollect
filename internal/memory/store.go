@@ -15,7 +15,9 @@ import (
 // Options configures a Store. UserDir holds the global user.md and
 // ProjectDir holds this project's files; Meta is the project identity
 // recorded once in project.json. Now is the injected clock (nil means
-// time.Now) and Limits zero fields fall back to DefaultLimits.
+// time.Now) and Limits zero fields fall back to DefaultLimits. ReadOnly
+// skips construction-time legacy migration, so a read-only caller never
+// copies, removes, or rebuilds files under the memory tree.
 type Options struct {
 	UserDir       string
 	ProjectDir    string
@@ -24,6 +26,7 @@ type Options struct {
 	Limits        Limits
 	SearchBackend string
 	Embedder      EmbeddingProvider
+	ReadOnly      bool
 }
 
 // Store owns every read and write of the memory files. Writers serialize on
@@ -69,10 +72,20 @@ func NewStore(opts Options) *Store {
 		searchBackend: opts.SearchBackend,
 		embedder:      opts.Embedder,
 	}
-	if _, err := store.MigrateLegacyIfPresent(); err != nil {
-		store.migrateErr = err
+	if !opts.ReadOnly {
+		if _, err := store.MigrateLegacyIfPresent(); err != nil {
+			store.migrateErr = err
+		}
 	}
 	return store
+}
+
+// NewReadOnlyStore builds a store that reads memory without migrating a
+// legacy tree. Read-only callers, such as the prompt dump, use it so a seeded
+// legacy store stays byte-for-byte intact.
+func NewReadOnlyStore(opts Options) *Store {
+	opts.ReadOnly = true
+	return NewStore(opts)
 }
 
 // ProjectDir is the store's project memory directory.
