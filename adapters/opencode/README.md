@@ -26,7 +26,13 @@ install -m 755 recollect ~/.local/bin/recollect
 recollect version
 ```
 
-The script form is:
+The one-line form is:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh | sh
+```
+
+The download-and-inspect form is:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh -o install.sh

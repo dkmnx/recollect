@@ -51,10 +51,34 @@ After the module is published, install it with:
 go install github.com/dkmnx/recollect/cmd/recollect@latest
 ```
 
-### Install script
+### One-line install
 
-Download and inspect the script, then run it. It verifies `checksums.txt`
-before it installs.
+```sh
+curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh | sh
+```
+
+Pin a release:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh | sh -s -- --version v0.1.0
+```
+
+On Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.ps1 | iex
+```
+
+Pin a Windows release:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.ps1))) -Version v0.1.0
+```
+
+This runs the script without inspection. Use the download-and-inspect form
+below when you need to review it first.
+
+### Download and inspect
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh -o install.sh
@@ -62,7 +86,7 @@ less install.sh
 sh install.sh --version v0.1.0
 ```
 
-On Windows, use the PowerShell script:
+On Windows:
 
 ```powershell
 irm https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.ps1 -OutFile install.ps1
