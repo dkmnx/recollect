@@ -9,37 +9,62 @@ events for durable memory.
 ## Requirements
 
 - OpenCode 2.3.0 or later.
-- The `recollect` engine binary, built from this repository.
+- The `recollect` engine binary from a release, `go install`, or a source
+  build.
 - Bun only for adapter development and tests.
 
-## Build the engine
+## Install the engine
 
-Build the binary from the repository root. Put it on your `PATH` or use an
-absolute path in the plugin options.
+### From a release
+
+Download the archive for your platform from GitHub Releases and verify it
+against `checksums.txt`.
+
+```sh
+tar -xzf recollect_v0.1.0_linux_amd64.tar.gz
+install -m 755 recollect ~/.local/bin/recollect
+recollect version
+```
+
+### With go install
+
+After the module is published:
+
+```sh
+go install github.com/dkmnx/recollect/cmd/recollect@latest
+recollect version
+```
+
+### From source
 
 ```sh
 git clone https://github.com/dkmnx/recollect
 cd recollect
 go build -o recollect ./cmd/recollect
+./recollect version
 ```
 
-Confirm it runs:
-
-```sh
-./recollect --help
-```
+Put the binary on `PATH` or use an absolute path in the plugin options.
 
 ## Add the plugin to OpenCode
 
 The engine prints the exact entry for this machine:
 
 ```sh
-./recollect setup opencode
+recollect setup opencode
 ```
 
-Pass `--write` to merge it into the global `opencode.json`. The command does
-not rewrite `opencode.jsonc`, because a JSON encoder would drop its comments.
-Run `./recollect doctor` to probe the engine before you restart the host.
+If the adapter is not beside the binary or in the current repository, pass its
+directory:
+
+```sh
+recollect setup opencode --adapter /path/to/recollect/adapters/opencode
+```
+
+Pass `--write` to merge the entry into the global `opencode.json`. The command
+does not rewrite `opencode.jsonc`, because a JSON encoder would drop its
+comments. Run `recollect doctor` to probe the engine before you restart the
+host.
 
 To add the entry by hand, use the `plugins` array in your OpenCode config. Use
 the global config at `~/.config/opencode/opencode.jsonc` or a project config at
@@ -110,8 +135,13 @@ change.
 
 - **Plugin does not load.** Check that `package` points at the adapter
   directory that contains `package.json`, and that the path is absolute.
+- **Setup cannot find the adapter.** Pass
+  `--adapter /path/to/adapters/opencode`; a binary installed with
+  `go install` sits outside the repository.
 - **Engine fails to start.** Run `binaryPath` directly. A missing execute bit,
   a wrong architecture, or a stale build fails the same way in OpenCode.
+- **Wrong version.** Run `recollect version` and reinstall or rebuild the
+  binary the config names.
 - **No memory tool.** Confirm the plugin entry is under `plugins`, not
   `plugin`, and restart OpenCode after editing the config.
 - **Capture is disabled.** Set `generationPolicy` to `host` and confirm the
