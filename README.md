@@ -114,6 +114,14 @@ func main() {
 Run it from the repository root with `go run ./cmd/demo`.
 No credentials are needed.
 
+## OpenCode
+
+The OpenCode adapter starts the engine as a child process, exposes the
+`memory` tool, and registers the `/recollect-*` commands. Build the engine
+binary, then add the adapter directory to `opencode.jsonc`. See
+[adapters/opencode/README.md](adapters/opencode/README.md) for the exact
+config and verification steps.
+
 ## Tests
 
 Run these checks from the repository root.
