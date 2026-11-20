@@ -1,8 +1,15 @@
-# Recollect
+<p align="center">
+  <img src="assets/icon.svg" alt="Recollect logo" width="96" height="96">
+</p>
 
-[![CI](https://github.com/dkmnx/recollect/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dkmnx/recollect/actions/workflows/ci.yml)
-[![Go Version](https://img.shields.io/badge/go-1.27.4-00ADD8)](go.mod)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+<h1 align="center">Recollect</h1>
+
+<p align="center">
+  <a href="https://github.com/dkmnx/recollect/actions/workflows/ci.yml"><img src="https://github.com/dkmnx/recollect/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="go.mod"><img src="https://img.shields.io/badge/go-1.27.4-00ADD8" alt="Go Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
+  <a href="https://github.com/dkmnx/recollect/releases"><img src="https://img.shields.io/github/v/release/dkmnx/recollect" alt="Latest release"></a>
+</p>
 
 Recollect is a Go memory engine for coding agents. It stores facts as Markdown
 files and ranks them for recall.
@@ -179,8 +186,10 @@ No credentials are needed.
 
 The OpenCode adapter starts the engine as a child process, exposes the
 `memory` tool, and registers the `/recollect-*` commands. Build the engine
-binary, then add the adapter directory to `opencode.jsonc`. See
-[adapters/opencode/README.md](adapters/opencode/README.md) for the exact
+binary, then add the `opencode-recollect` package to `opencode.jsonc`, or use
+the adapter directory from a checkout. The adapter finds the binary from
+`binaryPath`, `RECOLLECT_BINARY`, `PATH`, or the default install directory.
+See [adapters/opencode/README.md](adapters/opencode/README.md) for the exact
 config and verification steps.
 
 ## Tests
