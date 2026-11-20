@@ -42,13 +42,11 @@ Features:
 
 ## Packages
 
-| Package                      | Ecosystem   | Install                                                          | Purpose                                                                              |
-| ---------------------------- | ----------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `github.com/dkmnx/recollect` | Go module   | `go get github.com/dkmnx/recollect@latest`                       | Engine library for facts, search, transactions, jobs, and prompt rendering.          |
-| `recollect`                  | Go binary   | `go install github.com/dkmnx/recollect/cmd/recollect@latest`     | JSON-RPC stdio engine with `version`, `doctor`, and `setup opencode`.                |
-| `opencode-recollect`         | npm package | `opencode plugin add opencode-recollect@0.1.0`                   | OpenCode plugin with the `memory` tool, `/recollect-*` commands, and event capture.  |
-
-The `opencode-recollect` package ships with the `v0.1.0` release.
+| Package                                                                       | Ecosystem   | Install                                                      | Purpose                                                                             |
+| ----------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| [`github.com/dkmnx/recollect`](https://pkg.go.dev/github.com/dkmnx/recollect) | Go module   | `go get github.com/dkmnx/recollect@latest`                   | Engine library for facts, search, transactions, jobs, and prompt rendering.         |
+| [`recollect`](https://github.com/dkmnx/recollect/releases)                    | Go binary   | `go install github.com/dkmnx/recollect/cmd/recollect@latest` | JSON-RPC stdio engine with `version`, `doctor`, and `setup opencode`.               |
+| [`opencode-recollect`](https://www.npmjs.com/package/opencode-recollect)      | npm package | `opencode plugin add opencode-recollect@0.1.0`               | OpenCode plugin with the `memory` tool, `/recollect-*` commands, and event capture. |
 
 ## Requirements
 
