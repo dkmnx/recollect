@@ -68,6 +68,7 @@ func corpusStore(t *testing.T, backend string) *memory.Store {
 		Now:           func() time.Time { return deterministicNow },
 		SearchBackend: backend,
 	})
+	t.Cleanup(func() { _ = store.Close() })
 	return store
 }
 

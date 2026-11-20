@@ -17,12 +17,14 @@ import (
 func semanticStore(t *testing.T, backend string, embedder memory.EmbeddingProvider) *memory.Store {
 	t.Helper()
 	project := t.TempDir()
-	return memory.NewStore(memory.Options{
+	store := memory.NewStore(memory.Options{
 		ProjectDir: project, UserDir: t.TempDir(),
 		Meta:          memory.ProjectMeta{Root: project, Name: "proj", Slug: "proj"},
 		Now:           func() time.Time { return deterministicNow },
 		SearchBackend: backend, Embedder: embedder,
 	})
+	t.Cleanup(func() { _ = store.Close() })
+	return store
 }
 
 func hasHit(matches []memory.FactMatch, name string) bool {

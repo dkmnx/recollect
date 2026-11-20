@@ -41,6 +41,7 @@ func TestEmbeddingRefreshChecksVectorSourceHash(t *testing.T) {
 		SearchBackend: SearchBackendHybrid,
 		Embedder:      failingEmbedder{inner: NewDeterministicEmbedder(256), fail: &fail},
 	})
+	t.Cleanup(func() { _ = store.Close() })
 	if _, err := store.AppendFact(Fact{Name: "weather", Description: "old", Body: "sunset"}); err != nil {
 		t.Fatal(err)
 	}

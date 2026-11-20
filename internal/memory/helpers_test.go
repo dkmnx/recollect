@@ -26,5 +26,6 @@ func newTestStore(t *testing.T, limits memory.Limits) (*memory.Store, string, st
 		Now:        func() time.Time { return deterministicNow },
 		Limits:     limits,
 	})
+	t.Cleanup(func() { _ = store.Close() })
 	return store, userDir, projectDir
 }

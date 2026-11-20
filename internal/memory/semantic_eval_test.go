@@ -17,12 +17,14 @@ import (
 func evalStore(t *testing.T, backend string, provider memory.EmbeddingProvider) *memory.Store {
 	t.Helper()
 	project, user := t.TempDir(), t.TempDir()
-	return memory.NewStore(memory.Options{
+	store := memory.NewStore(memory.Options{
 		ProjectDir: project, UserDir: user,
 		Meta:          memory.ProjectMeta{Root: project, Name: "eval", Slug: "eval"},
 		Now:           func() time.Time { return deterministicNow },
 		SearchBackend: backend, Embedder: provider,
 	})
+	t.Cleanup(func() { _ = store.Close() })
+	return store
 }
 
 func hitNames(matches []memory.FactMatch) map[string]bool {

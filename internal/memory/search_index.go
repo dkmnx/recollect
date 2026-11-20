@@ -360,6 +360,19 @@ func (s *Store) ensureSearchIndex() (*searchIndex, error) {
 	return idx, nil
 }
 
+// Close releases the derived search index handle. Markdown stays
+// authoritative, so a store without an index needs no cleanup.
+func (s *Store) Close() error {
+	s.indexMu.Lock()
+	defer s.indexMu.Unlock()
+	if s.searchIndex == nil {
+		return nil
+	}
+	err := s.searchIndex.db.Close()
+	s.searchIndex = nil
+	return err
+}
+
 func encodeToken(token string) string {
 	return "t" + hex.EncodeToString([]byte(token))
 }
