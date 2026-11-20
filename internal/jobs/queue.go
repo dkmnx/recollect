@@ -526,12 +526,12 @@ func (q *Queue) Complete(id, lease, output string) error {
 		return ErrConflict
 	}
 	if err := q.applyOutput(job, input, output); err != nil {
-		if writeErr := q.scheduleRetryLocked(&job, &input, err.Error()); writeErr != nil {
+		if writeErr := q.scheduleRetryLocked(&job, &input, memory.CodeOf(err)); writeErr != nil {
 			return writeErr
 		}
 		return err
 	}
-	job.Output = output
+	job.Output = ""
 	job.Error = ""
 	job.Lease = ""
 	job.State = StateApplied
@@ -543,11 +543,12 @@ func (q *Queue) Complete(id, lease, output string) error {
 // bookkeeping, not a job failure, so it releases the job without consuming an
 // attempt. After the cap, a real failure parks in conflict instead of
 // consuming model calls forever.
-func (q *Queue) scheduleRetryLocked(job *Job, input *jobInput, reason string) error {
+func (q *Queue) scheduleRetryLocked(job *Job, input *jobInput, code string) error {
+	cancelled := code == "cancelled"
 	job.Lease = ""
-	job.Error = reason
+	job.Error = code
 	input.LeasedAt = time.Time{}
-	if reason == "cancelled" {
+	if cancelled {
 		job.State = StatePending
 		job.RetryAt = time.Time{}
 		job.Error = ""
@@ -570,6 +571,10 @@ func (q *Queue) scheduleRetryLocked(job *Job, input *jobInput, reason string) er
 
 // Fail records an attempt and a cooldown. It never advances a capture phase.
 func (q *Queue) Fail(id, lease, reason string) error {
+	return q.failCode(id, lease, failureCode(reason))
+}
+
+func (q *Queue) failCode(id, lease, code string) error {
 	release, err := q.acquire()
 	if err != nil {
 		return err
@@ -590,7 +595,29 @@ func (q *Queue) Fail(id, lease, reason string) error {
 	if err := checkLease(job, input, lease, q.now()); err != nil {
 		return err
 	}
-	return q.scheduleRetryLocked(&job, &input, reason)
+	return q.scheduleRetryLocked(&job, &input, code)
+}
+
+// failureCode keeps the host contract codes and folds unknown text to IO.
+func failureCode(reason string) string {
+	switch reason {
+	case "cancelled", "generation_timeout", "generation_failed", "generation_unavailable":
+		return reason
+	default:
+		return memory.CodeIO
+	}
+}
+
+// FailErr records a typed failure with its own code. A plain error whose text
+// is a host contract code keeps that code.
+func (q *Queue) FailErr(id, lease string, cause error) error {
+	code := memory.CodeOf(cause)
+	if code == memory.CodeIO {
+		if mapped := failureCode(cause.Error()); mapped != memory.CodeIO {
+			code = mapped
+		}
+	}
+	return q.failCode(id, lease, code)
 }
 
 // Run executes one leased job with the host generator. Deterministic jobs
@@ -613,7 +640,7 @@ func (q *Queue) Run(ctx context.Context, id, lease string) error {
 		}
 		output, err = q.generate(ctx, input.Prompt)
 		if err != nil {
-			return q.Fail(id, lease, err.Error())
+			return q.FailErr(id, lease, err)
 		}
 	}
 	return q.Complete(id, lease, output)
@@ -651,7 +678,7 @@ func (q *Queue) recoverLocked(jobs []Job, inputs []jobInput) error {
 				inputs[i].LeasedAt = time.Time{}
 				changed = true
 			}
-		} else if jobs[i].State == StateLeased && !inputs[i].LeasedAt.IsZero() &&
+		} else if jobs[i].State == StateLeased &&
 			!now.Before(inputs[i].LeasedAt.Add(defaultLeaseTTL)) {
 			jobs[i].Attempt++
 			jobs[i].Lease = ""

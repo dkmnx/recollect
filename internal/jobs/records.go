@@ -241,6 +241,7 @@ func collectRevisions(records []HostRecord, job Job, now func() time.Time) ([]me
 				at = now()
 			}
 			revisions = append(revisions, memory.ChainRevision{
+				ID:        job.ID + ":" + call.ID,
 				Path:      path,
 				SessionID: namespacedSession(job),
 				At:        at,

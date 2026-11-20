@@ -494,6 +494,9 @@ func TestLeaseGatingAndRepeatedCompletion(t *testing.T) {
 			recorded = item.Output
 		}
 	}
+	if recorded != "" {
+		t.Fatalf("completed job kept raw output: %q", recorded)
+	}
 	if err := q.Complete(lease.ID, "stale-lease", wrong); err != nil {
 		t.Fatalf("repeated Complete should be idempotent: %v", err)
 	}
