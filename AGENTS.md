@@ -1,8 +1,9 @@
 # Recollect context
 
 Recollect is a standalone Go memory engine. The canonical module path is
-`github.com/dkmnx/recollect`, not published yet. Go 1.27.0 and
-`golang.org/x/sys v0.48.0` are the only declared dependencies.
+`github.com/dkmnx/recollect`, not published yet. Go 1.27.4,
+`golang.org/x/sys` v0.49.0, `ncruces/go-sqlite3`, and
+`luist18/sqlite-vec-go` are the declared dependencies.
 
 ## Architecture
 

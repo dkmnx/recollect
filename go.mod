@@ -1,6 +1,6 @@
 module github.com/dkmnx/recollect
 
-go 1.27.0
+go 1.27.4
 
 require (
 	github.com/luist18/sqlite-vec-go v0.1.0-alpha.1
