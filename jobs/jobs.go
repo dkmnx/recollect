@@ -6,6 +6,7 @@ import internaljobs "github.com/dkmnx/recollect/internal/jobs"
 
 // Types shared between a host adapter and the queue.
 type (
+	Generator   = internaljobs.Generator
 	HostRecord  = internaljobs.HostRecord
 	Job         = internaljobs.Job
 	Queue       = internaljobs.Queue

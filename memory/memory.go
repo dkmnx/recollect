@@ -24,6 +24,18 @@ type (
 	Page            = internalmemory.Page
 	ProjectMeta     = internalmemory.ProjectMeta
 	Store           = internalmemory.Store
+
+	CaptureResult   = internalmemory.CaptureResult
+	DigestRetention = internalmemory.DigestRetention
+	JournalEntry    = internalmemory.JournalEntry
+	LinksField      = internalmemory.LinksField
+	ManifestEntry   = internalmemory.ManifestEntry
+	MigrateResult   = internalmemory.MigrateResult
+	PageDraft       = internalmemory.PageDraft
+	PageDraftResult = internalmemory.PageDraftResult
+	PageSpec        = internalmemory.PageSpec
+
+	ScoredFactForTest = internalmemory.ScoredFactForTest
 )
 
 // Constants used by tool contracts, capture, and prompt rendering.
@@ -58,6 +70,16 @@ const (
 	IndexLineLimit             = internalmemory.IndexLineLimit
 	MemoryInstructions         = internalmemory.MemoryInstructions
 	RedactedPlaceholder        = internalmemory.RedactedPlaceholder
+
+	AgentMemoryScopeLine  = internalmemory.AgentMemoryScopeLine
+	FactNodeType          = internalmemory.FactNodeType
+	MinDigestSummaryBytes = internalmemory.MinDigestSummaryBytes
+
+	ArchiveDigestKeepForTest  = internalmemory.ArchiveDigestKeepForTest
+	JournalPrevFileForTest    = internalmemory.JournalPrevFileForTest
+	JournalRotateBytesForTest = internalmemory.JournalRotateBytesForTest
+	MaxFactLinksForTest       = internalmemory.MaxFactLinksForTest
+	MaxFactNameBytesForTest   = internalmemory.MaxFactNameBytesForTest
 )
 
 // Functions forwarded to the implementation. Each is a variable alias so the
@@ -78,6 +100,7 @@ var (
 	DigestLine               = internalmemory.DigestLine
 	DigestUsable             = internalmemory.DigestUsable
 	Errorf                   = internalmemory.Errorf
+	FactSlug                 = internalmemory.FactSlug
 	FilterEvolveOps          = internalmemory.FilterEvolveOps
 	FilterPageDrafts         = internalmemory.FilterPageDrafts
 	FormatDigest             = internalmemory.FormatDigest
@@ -111,4 +134,32 @@ var (
 	TailBytes                = internalmemory.TailBytes
 	TopicsDir                = internalmemory.TopicsDir
 	UserFile                 = internalmemory.UserFile
+
+	ApplyEdit           = internalmemory.ApplyEdit
+	CaptureAttemptFile  = internalmemory.CaptureAttemptFile
+	CaptureStateFile    = internalmemory.CaptureStateFile
+	ChainFile           = internalmemory.ChainFile
+	DefaultLimits       = internalmemory.DefaultLimits
+	IsFullyPrivate      = internalmemory.IsFullyPrivate
+	ParseDigest         = internalmemory.ParseDigest
+	ParseFact           = internalmemory.ParseFact
+	ParsePage           = internalmemory.ParsePage
+	ProjectMetaFile     = internalmemory.ProjectMetaFile
+	RenderIndex         = internalmemory.RenderIndex
+	RenderManifest      = internalmemory.RenderManifest
+	RetainDigests       = internalmemory.RetainDigests
+	SearchLines         = internalmemory.SearchLines
+	SlugKey             = internalmemory.SlugKey
+	StripPrivateContent = internalmemory.StripPrivateContent
+	TruncateIndex       = internalmemory.TruncateIndex
+	ValidTopicName      = internalmemory.ValidTopicName
+
+	RankFactsForTest         = internalmemory.RankFactsForTest
+	PrepareFactForTest       = internalmemory.PrepareFactForTest
+	ManifestKindRankForTest  = internalmemory.ManifestKindRankForTest
+	ContainPathForTest       = internalmemory.ContainPathForTest
+	DecodeJournalLineForTest = internalmemory.DecodeJournalLineForTest
+	ExtractJSONObjectForTest = internalmemory.ExtractJSONObjectForTest
+	RepairJSONEscapesForTest = internalmemory.RepairJSONEscapesForTest
+	SlugifyForTest           = internalmemory.SlugifyForTest
 )

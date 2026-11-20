@@ -1,13 +1,14 @@
 package memory
 
-// audit: behavior contract preserved from xi; regression cases retained.
-// audit: coverage unchanged; no test-only seam introduced.
+// audit: host-adapter compatibility exports for xi's black-box memory suite.
+// regression: a divergent helper would hide behavior drift between the engines.
+// gap: xi's memory suite used package-internal helpers before the facade swap.
+// seam: these functions are exported so xi can call them through memory/memory.go.
 import "time"
 
 // ScoredFactForTest is the ranked-fact view with exported fields, so a
-// black-box test can read the score and the underlying fact without naming the
-// unexported scoredFact. This file compiles into the test binary only and ships
-// nowhere, so the package's exported surface is unchanged.
+// black-box adapter can read the score and the underlying fact without naming
+// the unexported scoredFact.
 type ScoredFactForTest struct {
 	Fact  Fact
 	Score float64
