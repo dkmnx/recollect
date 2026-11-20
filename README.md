@@ -8,7 +8,7 @@
   <a href="https://github.com/dkmnx/recollect/actions/workflows/ci.yml"><img src="https://github.com/dkmnx/recollect/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/go-1.27.4-00ADD8" alt="Go Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
-  <a href="https://github.com/dkmnx/recollect/releases"><img src="https://img.shields.io/github/v/release/dkmnx/recollect" alt="Latest release"></a>
+  <a href="https://github.com/dkmnx/recollect/releases"><img src="https://img.shields.io/badge/release-v0.1.0-blue" alt="Release v0.1.0"></a>
 </p>
 
 Recollect is a Go memory engine for coding agents. It stores facts as Markdown
@@ -21,10 +21,11 @@ Recollect stores each fact in its own Markdown file. A generated index lists
 the facts. The engine searches the corpus, follows links between facts, and
 builds derived pages from cited sources.
 
-The packages are written in Go and depend only on the standard library and
-`golang.org/x/sys`. Platform-specific code is limited to atomic file
-replacement. The engine is designed to be cross platform. Linux and Windows
-builds are checked. macOS is not verified.
+The packages are written in Go. They depend on the standard library,
+`golang.org/x/sys`, `ncruces/go-sqlite3`, and `luist18/sqlite-vec-go`.
+Platform-specific code covers atomic file replacement, advisory locks, and the
+Windows search cache ACL. The engine is designed to be cross platform. Linux
+and Windows builds are checked. macOS is not verified.
 
 Markdown stays the authoritative store, so a person can read and edit the
 files without the engine.
@@ -33,6 +34,7 @@ Features:
 
 - Fact storage with format-v1 parsing and atomic writes
 - Ranked project and user search
+- Optional private SQLite search index and hybrid semantic recall
 - Privacy filtering and secret detection
 - Digests, revision chains, journals, and derived pages
 - Prompt section rendering from an injected store and enablement flag
@@ -181,6 +183,17 @@ func main() {
 
 Run it from the repository root with `go run ./cmd/demo`.
 No credentials are needed.
+
+## Search index
+
+Search is lexical by default. Set `RECOLLECT_SEARCH_INDEX` to choose the
+derived index:
+
+- `sqlite` uses the private SQLite FTS5 index under `.engine/search`.
+- `hybrid` adds semantic candidates from the built-in deterministic embedder.
+
+Markdown stays authoritative. The index rebuilds from the files and never
+replaces them.
 
 ## OpenCode
 

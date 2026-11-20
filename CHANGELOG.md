@@ -24,7 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Durable capture and maintenance job queue with leases, retries, conflict
   states, and an injected model generator.
 - JSON-RPC stdio server for memory operations, context snapshots, event
-  ingest, jobs, import, export, and status.
+  ingest, jobs, import, and status.
 - Prompt section renderer that accepts injected enablement, store, and project
   root.
 - Legacy store importer with dry-run reports, source hashes, a manifest, and

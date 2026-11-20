@@ -21,7 +21,7 @@ Download the archive for your platform from GitHub Releases and verify it
 against `checksums.txt`, or run the repository install script.
 
 ```sh
-tar -xzf recollect_v0.1.0_linux_amd64.tar.gz
+tar -xzf recollect_0.1.0_linux_amd64.tar.gz
 install -m 755 recollect ~/.local/bin/recollect
 recollect version
 ```
@@ -87,9 +87,9 @@ Pin the version. `opencode-recollect@latest` also works, but a later release
 can change under you. The `binaryPath` option is optional when the engine is
 on `PATH` or in the default install directory.
 
-OpenCode installs a missing package in the background at server startup, so
-you do not run `npm install`. The CLI can add the package to the global config
-and install it in one step:
+Once the package is published, OpenCode installs a missing package in the
+background at server startup, so you do not run `npm install`. The CLI can add
+the package to the global config and install it in one step:
 
 ```sh
 opencode plugin add opencode-recollect@0.1.0

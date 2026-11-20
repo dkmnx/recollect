@@ -59,8 +59,8 @@ bun test
 
 ## Tests
 
-Every test file starts with an audit record. The check tool rejects a test
-file without one. Name four things:
+Every test file starts with an audit record. The check tool requires the
+behavior and coverage lines. Add the regression and the seam too:
 
 ```go
 // audit: behavior - what observable behavior the test proves.
@@ -72,7 +72,8 @@ file without one. Name four things:
 Write the test before the fix. Confirm it fails on the old code, then confirm
 it passes. Acceptance tests use real boundaries: temporary directories,
 subprocesses, JSON-RPC frames, and on-disk state. Do not add test-only hooks
-to production code.
+to production code. The compatibility helpers in `internal/memory/export.go`
+are the existing host-adapter exception.
 
 ## Code style
 

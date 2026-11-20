@@ -15,6 +15,9 @@ Recollect is a standalone Go memory engine. The canonical module path is
   systems use `flock`.
 - `internal/engine` owns transactions, revision guards, request receipts,
   session cursors, and scope lock ordering. It wraps `memory.Store`.
+- The top-level `memory`, `engine`, `jobs`, `render`, and `imports` packages
+  are the public facades. `cmd/recollect` serves the stdio protocol and setup
+  commands. `adapters/opencode` is the OpenCode plugin.
 - `tools/checktestaudit` rejects test files without an audit record.
 
 ## Commands
@@ -31,7 +34,8 @@ Recollect is a standalone Go memory engine. The canonical module path is
 
 ## Code style
 
-- Keep packages under `internal/`. Avoid new dependencies.
+- Keep packages under `internal/`. Public facades live at the top level.
+  Avoid new dependencies.
 - Put platform-specific locking in build-tagged files under `internal/oslock`.
 - Keep host inputs injected. The render and engine packages do not import
   host or adapter packages.
