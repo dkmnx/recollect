@@ -34,6 +34,7 @@ type Deps struct {
 // Bindings are fixed by initialize. Later requests cannot change them.
 type Bindings struct {
 	ProjectDir   string
+	ProjectRoot  string
 	UserDir      string
 	HarnessID    string
 	Capabilities []string
@@ -52,6 +53,13 @@ func canonicalDir(path string) (string, error) {
 	return resolved, nil
 }
 
+func projectRootFor(b Bindings) string {
+	if strings.TrimSpace(b.ProjectRoot) == "" {
+		return b.ProjectDir
+	}
+	return b.ProjectRoot
+}
+
 // OpenBindings constructs bound dependencies from initialize values.
 func OpenBindings(b Bindings) (Deps, error) {
 	return OpenBindingsWithSearch(b, "", nil)
@@ -59,6 +67,10 @@ func OpenBindings(b Bindings) (Deps, error) {
 
 // The search backend is process configuration, not a client-controlled binding.
 func OpenBindingsWithSearch(b Bindings, searchBackend string, embedder memory.EmbeddingProvider) (Deps, error) {
+	projectRoot := b.ProjectRoot
+	if strings.TrimSpace(projectRoot) == "" {
+		projectRoot = b.ProjectDir
+	}
 	projectDir, err := canonicalDir(b.ProjectDir)
 	if err != nil {
 		return Deps{}, err
@@ -70,7 +82,7 @@ func OpenBindingsWithSearch(b Bindings, searchBackend string, embedder memory.Em
 	store := memory.NewStore(memory.Options{
 		ProjectDir:    projectDir,
 		UserDir:       userDir,
-		Meta:          memory.ProjectMetaFor(projectDir),
+		Meta:          memory.ProjectMetaFor(projectRoot),
 		SearchBackend: searchBackend,
 		Embedder:      embedder,
 	})
@@ -183,6 +195,7 @@ func (s *server) reply(id json.RawMessage, result any, err *Error) error {
 
 type initParams struct {
 	ProjectDir      string    `json:"projectDir"`
+	ProjectRoot     string    `json:"projectRoot"`
 	UserDir         string    `json:"userDir"`
 	HarnessID       string    `json:"harnessID"`
 	Capabilities    []string  `json:"capabilities"`
@@ -235,6 +248,7 @@ func (s *server) initialize(req Request) error {
 	}
 	b := Bindings{
 		ProjectDir:   p.ProjectDir,
+		ProjectRoot:  p.ProjectRoot,
 		UserDir:      p.UserDir,
 		HarnessID:    p.HarnessID,
 		Capabilities: capabilities,

@@ -43,7 +43,7 @@ func (s *server) contextGet(req Request) error {
 	section := filterModelText(renderFn(render.Config{
 		Enabled: true,
 		Store:   s.deps.Store,
-		Root:    s.deps.Store.ProjectDir(),
+		Root:    projectRootFor(s.bindings),
 	}))
 	s.snapshotText = section
 	s.snapshotID = snapshotHash(section + "\x00" + s.bindings.ProjectDir + "\x00" + s.bindings.HarnessID)

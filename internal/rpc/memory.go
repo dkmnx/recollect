@@ -4,8 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"os"
 	"strings"
 
 	"github.com/dkmnx/recollect/internal/engine"
@@ -79,37 +77,21 @@ func (s *server) execute(req Request) error {
 
 func (s *server) executeRead(req Request, p executeParams, scope engine.Scope) error {
 	out := executeResult{Target: p.Target, Operation: "read"}
-	if scope == engine.ScopeUser {
-		content, err := s.deps.Store.ReadUser()
-		if err != nil {
-			return s.wrap(req.ID, err, storageFailure)
-		}
-		rev, err := s.deps.Engine.ReadRevisionForScope(scope, "")
-		if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return s.wrap(req.ID, err, engineFailure)
-		}
-		out.Name = "user"
-		out.Content = filterModelText(content)
-		out.Revision = string(rev)
-		return s.reply(req.ID, out, nil)
-	}
-	if strings.TrimSpace(p.Name) == "" {
+	if scope != engine.ScopeUser && strings.TrimSpace(p.Name) == "" {
 		return s.invalid(req.ID, "name is required for read")
 	}
-	fact, err := s.deps.Store.ReadFact(p.Name)
+	got, err := s.deps.Engine.Read(scope, p.Name)
 	if err != nil {
 		return s.wrap(req.ID, err, engineFailure)
 	}
-	rev, err := s.deps.Engine.ReadRevisionForScope(scope, p.Name)
-	if err != nil {
-		return s.wrap(req.ID, err, engineFailure)
-	}
-	out.Name = filterModelText(fact.Name)
-	out.Revision = string(rev)
-	out.Content = filterModelText(memory.FormatFact(fact))
-	out.Fact = &factView{
-		Name: filterModelText(fact.Name), Description: filterModelText(fact.Description),
-		Body: filterModelText(fact.Body),
+	out.Name = filterModelText(got.Name)
+	out.Revision = string(got.Revision)
+	out.Content = filterModelText(got.Content)
+	if got.Fact != nil {
+		out.Fact = &factView{
+			Name: filterModelText(got.Fact.Name), Description: filterModelText(got.Fact.Description),
+			Body: filterModelText(got.Fact.Body),
+		}
 	}
 	return s.reply(req.ID, out, nil)
 }
