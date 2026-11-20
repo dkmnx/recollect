@@ -120,6 +120,11 @@ A pull request should:
 
 CI must be green before merge.
 
+## Releases
+
+Follow [RELEASING.md](RELEASING.md). The engine and adapter use separate tag
+series, and npm versions are immutable after publish.
+
 ## Reporting security issues
 
 Do not open a public issue for a vulnerability. Use a private security
