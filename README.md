@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/recollect_logo.svg" alt="Recollect logo" width="360">
+  <img src="assets/recollect_banner.svg" alt="Recollect logo" width="100%">
 </p>
 
 <h1 align="center">Recollect</h1>
