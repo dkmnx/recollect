@@ -8,7 +8,7 @@
   <a href="https://github.com/dkmnx/recollect/actions/workflows/ci.yml"><img src="https://github.com/dkmnx/recollect/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="go.mod"><img src="https://img.shields.io/badge/go-1.27.4-00ADD8" alt="Go Version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="License: MIT"></a>
-  <a href="https://github.com/dkmnx/recollect/releases"><img src="https://img.shields.io/badge/release-v0.1.0-blue" alt="Release v0.1.0"></a>
+  <a href="https://github.com/dkmnx/recollect/releases"><img src="https://img.shields.io/github/v/release/dkmnx/recollect" alt="Latest release"></a>
 </p>
 
 Recollect is a Go memory engine for coding agents. It stores facts as Markdown
