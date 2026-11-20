@@ -1,5 +1,9 @@
 # Recollect
 
+[![CI](https://github.com/dkmnx/recollect/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dkmnx/recollect/actions/workflows/ci.yml)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/dkmnx/recollect)](go.mod)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Recollect is a Go memory engine for coding agents. It stores facts as Markdown
 files and ranks them for recall.
 
