@@ -130,8 +130,10 @@ func TestUpsertKeepsMixedCaseFilePath(t *testing.T) {
 	if !strings.Contains(string(raw), "new body") {
 		t.Fatalf("selected file not updated: %q", raw)
 	}
-	if _, err := os.Lstat(filepath.Join(projectDir, "guide.md")); !os.IsNotExist(err) {
-		t.Fatalf("lowercase duplicate created: %v", err)
+	if !caseInsensitiveDir(t, projectDir) {
+		if _, err := os.Lstat(filepath.Join(projectDir, "guide.md")); !os.IsNotExist(err) {
+			t.Fatalf("lowercase duplicate created: %v", err)
+		}
 	}
 }
 
@@ -165,4 +167,17 @@ func TestSummaryFactStaysReadable(t *testing.T) {
 	if fact.Description != "A summary fact" {
 		t.Fatalf("summary fact = %+v", fact)
 	}
+}
+
+// caseInsensitiveDir reports whether the filesystem treats case variants as
+// one name. Windows and default macOS do; Linux does not.
+func caseInsensitiveDir(t *testing.T, dir string) bool {
+	t.Helper()
+	probe := filepath.Join(dir, "case-probe")
+	if err := os.WriteFile(probe, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(probe)
+	_, err := os.Stat(filepath.Join(dir, "CASE-PROBE"))
+	return err == nil
 }

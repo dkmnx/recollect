@@ -157,11 +157,26 @@ func TestCorrectAfterReadingMixedCaseFact(t *testing.T) {
 	if !strings.Contains(string(raw), "new body") {
 		t.Fatalf("target file not updated: %q", raw)
 	}
-	if _, err := os.Lstat(filepath.Join(projectDir, "guide.md")); !os.IsNotExist(err) {
-		t.Fatalf("lowercase duplicate created: %v", err)
+	if !caseInsensitiveDir(t, projectDir) {
+		if _, err := os.Lstat(filepath.Join(projectDir, "guide.md")); !os.IsNotExist(err) {
+			t.Fatalf("lowercase duplicate created: %v", err)
+		}
 	}
 	fact, err := store.ReadFact("guide")
 	if err != nil || fact.Body != "new body" {
 		t.Fatalf("fact after correction = %+v, %v", fact, err)
 	}
+}
+
+// caseInsensitiveDir reports whether the filesystem treats case variants as
+// one name. Windows and default macOS do; Linux does not.
+func caseInsensitiveDir(t *testing.T, dir string) bool {
+	t.Helper()
+	probe := filepath.Join(dir, "case-probe")
+	if err := os.WriteFile(probe, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Remove(probe)
+	_, err := os.Stat(filepath.Join(dir, "CASE-PROBE"))
+	return err == nil
 }

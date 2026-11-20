@@ -4,6 +4,7 @@ package memory
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"unsafe"
@@ -85,9 +86,9 @@ func validatePrivateDir(path string) error {
 		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
 		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE ||
 			!windows.EqualSid(sid, user.User.Sid) ||
-			ace.Mask&windows.GENERIC_ALL == 0 ||
+			ace.Mask == 0 ||
 			ace.Header.AceFlags&(windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE) == 0 {
-			return errors.New("search cache DACL grants access to another trustee")
+			return fmt.Errorf("search cache DACL entry %d grants access to another trustee", i)
 		}
 	}
 	return nil

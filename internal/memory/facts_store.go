@@ -85,7 +85,11 @@ func (s *Store) listFactFilesLocked() ([]factFile, error) {
 			return nil, err
 		}
 	}
-	topicEntries, err := os.ReadDir(TopicsDir(s.projectDir))
+	topicsDir := TopicsDir(s.projectDir)
+	if info, err := os.Lstat(topicsDir); err == nil && !info.IsDir() {
+		return nil, Errorf(CodeIO, "topics path is not a directory: %s", topicsDir)
+	}
+	topicEntries, err := os.ReadDir(topicsDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, Errorf(CodeIO, "read topics: %v", err)
 	}
