@@ -40,6 +40,16 @@ Features:
 - Prompt section rendering from an injected store and enablement flag
 - Fixtures and a ranking corpus that exercise the real store
 
+## Packages
+
+| Package                      | Ecosystem   | Install                                                          | Purpose                                                                              |
+| ---------------------------- | ----------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `github.com/dkmnx/recollect` | Go module   | `go get github.com/dkmnx/recollect@latest`                       | Engine library for facts, search, transactions, jobs, and prompt rendering.          |
+| `recollect`                  | Go binary   | `go install github.com/dkmnx/recollect/cmd/recollect@latest`     | JSON-RPC stdio engine with `version`, `doctor`, and `setup opencode`.                |
+| `opencode-recollect`         | npm package | `opencode plugin add opencode-recollect@0.1.0`                   | OpenCode plugin with the `memory` tool, `/recollect-*` commands, and event capture.  |
+
+The `opencode-recollect` package ships with the `v0.1.0` release.
+
 ## Requirements
 
 Go 1.27.4 or later.
