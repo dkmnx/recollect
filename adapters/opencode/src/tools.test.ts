@@ -45,7 +45,9 @@ describe("memory tool", () => {
       description: "d", body: "b", reason: "", revision: "", query: "build", scene: "",
     };
 
-    const result = await memoryToolDefinition.execute(args, client);
+    const execution = memoryToolDefinition.execute(args, client);
+    expect(typeof (execution as any).pipe).toBe("function");
+    const result = await Effect.runPromise(execution as any);
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual(args);

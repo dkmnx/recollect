@@ -32,7 +32,11 @@ export const memoryToolDefinition = {
   },
   options: TOOL_OPTIONS,
   execute: (args: unknown, client: { memoryExecute(params: unknown): Promise<any> }) =>
-    client.memoryExecute(args),
+    Effect.promise(() => client.memoryExecute(args)).pipe(
+      Effect.map((result: any) =>
+        typeof result?.content === "string" ? { content: result.content } : { content: JSON.stringify(result) },
+      ),
+    ),
 };
 
 export function createMemoryTool(client: { memoryExecute(params: unknown): Promise<any> }) {
