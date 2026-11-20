@@ -20,8 +20,10 @@ git tag -a v0.1.0 -m "v0.1.0"
 git push origin v0.1.0
 ```
 
-1. The `Release` workflow runs tests and the audit, then GoReleaser publishes
-   Linux, macOS, and Windows archives with `checksums.txt`.
+1. The `Release` workflow runs tests and the audit, extracts the matching
+   `CHANGELOG.md` section, and passes it with `--release-notes`. GoReleaser
+   publishes Linux, macOS, and Windows archives with `checksums.txt`. A missing
+   changelog section fails before anything is published.
 2. Verify the run and the release:
 
 ```sh
@@ -38,7 +40,7 @@ sh scripts/install.sh --version v0.1.0 --dir /tmp/recollect-check
 /tmp/recollect-check/recollect version
 ```
 
-1. Replace the static release badge with the dynamic one after the tag exists.
+1. Confirm the release badge shows the new tag.
 
 ## Adapter release
 
