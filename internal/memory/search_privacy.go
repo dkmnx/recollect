@@ -11,6 +11,7 @@ type searchFact struct {
 	Fact
 	RelPath    string
 	SourceHash string
+	terms      factTerms // Immutable after preparation, including across searches.
 }
 
 // stripPrivateForSearch removes private spans without leaving a searchable marker.
@@ -90,7 +91,7 @@ func filterSearchText(text string) string {
 	return removeSecretsForSearch(stripPrivateForSearch(text))
 }
 
-func filteredFact(rel string, raw string, mod time.Time) (searchFact, bool) {
+func filteredFact(rel string, raw string, mod time.Time, hash string) (searchFact, bool) {
 	masked := stripPrivateForSearch(raw)
 	fact := parseFactBytes(rel, masked, mod)
 	base := strings.TrimSuffix(filepath.Base(rel), markdownExt)
@@ -108,10 +109,17 @@ func filteredFact(rel string, raw string, mod time.Time) (searchFact, bool) {
 		strings.TrimSpace(fact.Body) == "" {
 		return searchFact{}, false
 	}
+	// Keep only the search fields and detach them from the source buffer.
+	projection := Fact{
+		Name: strings.Clone(fact.Name), Description: strings.Clone(fact.Description),
+		Body: strings.Clone(fact.Body), Scene: strings.Clone(fact.Scene),
+		Links: fact.Links, Path: fact.Path, ModTime: fact.ModTime,
+	}
 	return searchFact{
-		Fact:       fact,
+		Fact:       projection,
 		RelPath:    filepath.ToSlash(rel),
-		SourceHash: factContentHash(rel, []byte(raw)),
+		SourceHash: hash,
+		terms:      prepareFactTerms(projection),
 	}, true
 }
 
@@ -123,10 +131,20 @@ func (s *Store) searchCorpus() ([]searchFact, error) {
 		return nil, err
 	}
 	out := make([]searchFact, 0, len(files))
+	next := make(map[string]searchFact, len(files))
 	for _, file := range files {
-		if fact, ok := filteredFact(file.rel, file.raw, file.mod); ok {
-			out = append(out, fact)
+		hash := factContentHash(file.rel, []byte(file.raw))
+		fact, ok := s.searchCache[file.rel]
+		if !ok || fact.SourceHash != hash {
+			fact, ok = filteredFact(file.rel, file.raw, file.mod, hash)
+			if !ok {
+				continue
+			}
 		}
+		fact.ModTime = file.mod
+		next[file.rel] = fact
+		out = append(out, fact)
 	}
+	s.searchCache = next
 	return out, nil
 }

@@ -9,6 +9,7 @@ package memory
 
 import (
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -62,44 +63,11 @@ type scoredFact struct {
 // is not a result: freshness and backlinks never rescue an unrelated hit.
 // Ties break by name, so the order is deterministic.
 func rankFacts(facts []Fact, query string, now time.Time) []scoredFact {
-	normalized := strings.TrimSpace(normalizeText(query))
-	if normalized == "" || len(facts) == 0 {
-		return nil
-	}
-	phraseHit := func(s string) bool {
-		return strings.Contains(normalizeText(s), normalized)
-	}
-	tokens := queryTokens(query)
-	if len(tokens) == 0 {
-		out := make([]scoredFact, len(facts))
-		for i, fact := range facts {
-			out[i] = scoredFact{fact: fact, field: matchField(fact, phraseHit), index: i}
-		}
-		return out
-	}
-	scorer := newFactScorer(facts)
-	out := make([]scoredFact, 0, len(facts))
-	for i, fact := range facts {
-		relevance, field := scorer.score(i, fact, tokens, phraseHit)
-		if relevance <= 0 {
-			continue
-		}
-		score := relevance
-		score += freshnessBonus(fact, now)
-		score += backlinkWeight * math.Log(1+float64(backlinkCount(facts, fact.Name)))
-		out = append(out, scoredFact{fact: fact, score: score, field: field, index: i})
-	}
-	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].score != out[j].score {
-			return out[i].score > out[j].score
-		}
-		return out[i].fact.Name < out[j].fact.Name
-	})
-	return out
+	return rankCandidates(facts, nil, nil, nil, query, now)
 }
 
-// A narrowed candidate set must keep the same order and scores as rankFacts.
-func rankCandidates(facts []Fact, rels []string, candidates map[string]bool, query string, now time.Time) []scoredFact {
+// A narrowed candidate set keeps the same corpus statistics and scoring as rankFacts.
+func rankCandidates(facts []Fact, prepared []factTerms, rels []string, candidates map[string]bool, query string, now time.Time) []scoredFact {
 	normalized := strings.TrimSpace(normalizeText(query))
 	if normalized == "" || len(facts) == 0 {
 		return nil
@@ -111,26 +79,37 @@ func rankCandidates(facts []Fact, rels []string, candidates map[string]bool, que
 	if len(tokens) == 0 {
 		out := make([]scoredFact, 0, len(facts))
 		for i, fact := range facts {
-			if !candidates[rels[i]] {
+			if candidates != nil && !candidates[rels[i]] {
 				continue
 			}
 			out = append(out, scoredFact{fact: fact, field: matchField(fact, phraseHit), index: i})
 		}
 		return out
 	}
-	scorer := newFactScorer(facts)
-	out := make([]scoredFact, 0, len(candidates))
+	if prepared == nil {
+		prepared = make([]factTerms, len(facts))
+		for i, fact := range facts {
+			prepared[i] = prepareFactTerms(fact)
+		}
+	}
+	scorer := newFactScorer(prepared, tokens)
+	backlinks := countBacklinks(facts)
+	capacity := len(facts)
+	if candidates != nil {
+		capacity = len(candidates)
+	}
+	out := make([]scoredFact, 0, capacity)
 	for i, fact := range facts {
-		if !candidates[rels[i]] {
+		if candidates != nil && !candidates[rels[i]] {
 			continue
 		}
-		relevance, field := scorer.score(i, fact, tokens, phraseHit)
+		relevance, field := scorer.score(prepared[i], fact, tokens, phraseHit)
 		if relevance <= 0 {
 			continue
 		}
 		score := relevance
 		score += freshnessBonus(fact, now)
-		score += backlinkWeight * math.Log(1+float64(backlinkCount(facts, fact.Name)))
+		score += backlinkWeight * math.Log(1+float64(backlinks[fact.Name]))
 		out = append(out, scoredFact{fact: fact, score: score, field: field, index: i})
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -168,87 +147,103 @@ func queryTokens(query string) []string {
 	return tokens
 }
 
-// fieldStats holds one field's corpus statistics: the token lists per fact
-// (index-aligned with the input slice) and the per-term document frequency.
-type fieldStats struct {
-	docs     [][]string
-	total    int
-	docFreq  map[string]int
-	avgBytes float64
+const (
+	nameField = iota
+	descriptionField
+	bodyField
+	fieldCount
+)
+
+type fieldTerms struct {
+	length int
+	counts map[string]int
 }
 
-func newFieldStats(texts []string) fieldStats {
-	stats := fieldStats{docFreq: map[string]int{}}
-	for _, text := range texts {
+type factTerms [fieldCount]fieldTerms
+
+func prepareFactTerms(fact Fact) factTerms {
+	texts := [fieldCount]string{fact.Name, fact.Description, fact.Body}
+	var prepared factTerms
+	for field, text := range texts {
 		tokens := tokenize(text)
-		stats.docs = append(stats.docs, tokens)
-		stats.total += len(tokens)
-		seen := map[string]bool{}
+		counts := make(map[string]int)
 		for _, token := range tokens {
-			if !seen[token] {
-				seen[token] = true
-				stats.docFreq[token]++
-			}
+			counts[token]++
 		}
+		prepared[field] = fieldTerms{length: len(tokens), counts: counts}
 	}
-	if len(texts) > 0 {
-		stats.avgBytes = float64(stats.total) / float64(len(texts))
-	}
-	return stats
+	return prepared
 }
 
-// bm25 scores one document of the field against the query tokens.
-func (f *fieldStats) bm25(doc int, tokens []string) float64 {
-	length := float64(len(f.docs[doc]))
-	if length == 0 || f.avgBytes == 0 {
+type fieldStats struct {
+	docFreq map[string]int
+	avgLen  float64
+}
+
+func (f fieldStats) bm25(doc fieldTerms, tokens []string, corpusSize int) float64 {
+	if doc.length == 0 || f.avgLen == 0 {
 		return 0
 	}
+	lengthNorm := bm25K1 * (1 - bm25B + bm25B*float64(doc.length)/f.avgLen)
 	var score float64
 	for _, token := range tokens {
-		df := f.docFreq[token]
-		if df == 0 {
+		tf := float64(doc.counts[token])
+		if tf == 0 {
 			continue
 		}
-		tf := 0
-		for _, candidate := range f.docs[doc] {
-			if candidate == token {
-				tf++
-			}
-		}
-		idf := math.Log(1 + (float64(len(f.docs))-float64(df)+0.5)/(float64(df)+0.5))
-		tfNorm := float64(tf) * (bm25K1 + 1) / (float64(tf) + bm25K1*(1-bm25B+bm25B*length/f.avgBytes))
+		df := float64(f.docFreq[token])
+		idf := math.Log(1 + (float64(corpusSize)-df+0.5)/(df+0.5))
+		tfNorm := tf * (bm25K1 + 1) / (tf + lengthNorm)
 		score += idf * tfNorm
 	}
 	return score
 }
 
-// factScorer holds the three fields' corpus statistics for one ranking pass.
 type factScorer struct {
-	name fieldStats
-	desc fieldStats
-	body fieldStats
+	fields [fieldCount]fieldStats
+	size   int
 }
 
-func newFactScorer(facts []Fact) *factScorer {
-	names, descs, bodies := make([]string, len(facts)), make([]string, len(facts)), make([]string, len(facts))
-	for i, fact := range facts {
-		names[i] = fact.Name
-		descs[i] = fact.Description
-		bodies[i] = fact.Body
+func newFactScorer(docs []factTerms, tokens []string) factScorer {
+	queryTerms := make(map[string]bool, len(tokens))
+	for _, token := range tokens {
+		queryTerms[token] = true
 	}
-	return &factScorer{name: newFieldStats(names), desc: newFieldStats(descs), body: newFieldStats(bodies)}
+	scorer := factScorer{size: len(docs)}
+	for field := range scorer.fields {
+		total := 0
+		frequencies := make(map[string]int, len(queryTerms))
+		for _, doc := range docs {
+			entry := doc[field]
+			total += entry.length
+			if len(entry.counts) < len(queryTerms) {
+				for token := range entry.counts {
+					if queryTerms[token] {
+						frequencies[token]++
+					}
+				}
+				continue
+			}
+			for token := range queryTerms {
+				if entry.counts[token] != 0 {
+					frequencies[token]++
+				}
+			}
+		}
+		scorer.fields[field] = fieldStats{docFreq: frequencies, avgLen: float64(total) / float64(len(docs))}
+	}
+	return scorer
 }
 
-// score combines the weighted field scores and the exact-phrase bonus for
-// the fact at doc (the statistics are index-aligned with the listed facts).
-func (s *factScorer) score(doc int, fact Fact, tokens []string, phraseHit func(string) bool) (float64, string) {
-	total := fieldWeightName*s.name.bm25(doc, tokens) +
-		fieldWeightDesc*s.desc.bm25(doc, tokens) +
-		fieldWeightBody*s.body.bm25(doc, tokens)
-	if phraseHit(fact.Name) || phraseHit(fact.Description) || phraseHit(fact.Body) {
+func (s factScorer) score(terms factTerms, fact Fact, tokens []string, phraseHit func(string) bool) (float64, string) {
+	total := fieldWeightName*s.fields[nameField].bm25(terms[nameField], tokens, s.size) +
+		fieldWeightDesc*s.fields[descriptionField].bm25(terms[descriptionField], tokens, s.size) +
+		fieldWeightBody*s.fields[bodyField].bm25(terms[bodyField], tokens, s.size)
+	field := matchField(fact, phraseHit)
+	if field != "ranked" {
 		total += exactPhraseBonus
 	}
-	return total, matchField(fact, phraseHit)
+	return total, field
 }
 
 // freshnessBonus decays toward zero over roughly a month, so a fresh fact
@@ -265,16 +260,15 @@ func freshnessBonus(fact Fact, now time.Time) float64 {
 	return freshnessWeight * math.Exp(-age.Hours()/freshnessTauHours)
 }
 
-// backlinkCount counts facts whose links point at name.
-func backlinkCount(facts []Fact, name string) int {
-	count := 0
+// countBacklinks gives each source fact at most one vote for a link target.
+func countBacklinks(facts []Fact) map[string]int {
+	counts := make(map[string]int)
 	for _, fact := range facts {
-		for _, link := range fact.Links {
-			if link == name {
-				count++
-				break
+		for i, link := range fact.Links {
+			if !slices.Contains(fact.Links[:i], link) {
+				counts[link]++
 			}
 		}
 	}
-	return count
+	return counts
 }

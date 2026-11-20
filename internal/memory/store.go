@@ -41,6 +41,7 @@ type Store struct {
 	embedder      EmbeddingProvider
 	indexMu       sync.Mutex
 	searchIndex   *searchIndex
+	searchCache   map[string]searchFact // Guarded by mu.
 	mu            sync.Mutex
 	// migrateErr records a failed legacy migration; the legacy files stay
 	// intact (copy-first), and /memory status surfaces the failure.

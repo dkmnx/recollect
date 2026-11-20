@@ -10,6 +10,7 @@ package memory
 import (
 	"strings"
 	"unicode"
+	"unicode/utf8"
 )
 
 // The full-width ASCII block, the fold that turns it into half-width ASCII,
@@ -43,44 +44,43 @@ func normalizeText(text string) string {
 // Han text has no word boundary to split on; a Han run of one character
 // yields that character.
 func tokenize(text string) []string {
+	text = normalizeText(text)
 	var terms []string
-	var word []rune
-	var han []rune
-	flushWord := func() {
-		if len(word) > 0 {
-			terms = append(terms, string(word))
-			word = word[:0]
+	wordStart, hanStart, lastHan := -1, -1, -1
+	for offset, r := range text {
+		if unicode.Is(unicode.Han, r) {
+			if wordStart >= 0 {
+				terms = append(terms, text[wordStart:offset])
+				wordStart = -1
+			}
+			if lastHan >= 0 {
+				terms = append(terms, text[lastHan:offset+utf8.RuneLen(r)])
+			} else {
+				hanStart = offset
+			}
+			lastHan = offset
+			continue
+		}
+		if lastHan >= 0 {
+			if lastHan == hanStart {
+				terms = append(terms, text[hanStart:offset])
+			}
+			lastHan = -1
+		}
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			if wordStart < 0 {
+				wordStart = offset
+			}
+		} else if wordStart >= 0 {
+			terms = append(terms, text[wordStart:offset])
+			wordStart = -1
 		}
 	}
-	flushHan := func() {
-		switch {
-		case len(han) == 1:
-			terms = append(terms, string(han))
-		case len(han) > 1:
-			for i := 0; i+1 < len(han); i++ {
-				terms = append(terms, string(han[i:i+2]))
-			}
-		}
-		han = han[:0]
+	if wordStart >= 0 {
+		terms = append(terms, text[wordStart:])
 	}
-	for _, r := range normalizeText(text) {
-		switch {
-		case unicode.Is(unicode.Han, r):
-			if len(word) > 0 {
-				flushWord()
-			}
-			han = append(han, r)
-		case unicode.IsLetter(r) || unicode.IsDigit(r):
-			if len(han) > 0 {
-				flushHan()
-			}
-			word = append(word, r)
-		default:
-			flushWord()
-			flushHan()
-		}
+	if lastHan >= 0 && lastHan == hanStart {
+		terms = append(terms, text[hanStart:])
 	}
-	flushWord()
-	flushHan()
 	return terms
 }

@@ -46,26 +46,21 @@ func (s *Store) SearchFacts(query, scene string, max int) ([]FactMatch, error) {
 	}
 	allCorpus := corpus
 	var candidates map[string]bool
-	indexed := false
 	if s.searchBackend != "" && len(queryTokens(query)) > 0 {
-		_, names, ok := s.indexedSearch(allCorpus, query)
-		candidates, indexed = names, ok
+		candidates = s.indexedSearch(allCorpus, query)
 	}
 	facts := make([]Fact, 0, len(allCorpus))
 	rels := make([]string, 0, len(allCorpus))
+	terms := make([]factTerms, 0, len(allCorpus))
 	for _, item := range allCorpus {
 		if scene != "" && item.Fact.Scene != "" && item.Fact.Scene != scene {
 			continue
 		}
 		facts = append(facts, item.Fact)
 		rels = append(rels, item.RelPath)
+		terms = append(terms, item.terms)
 	}
-	var ranked []scoredFact
-	if indexed {
-		ranked = rankCandidates(facts, rels, candidates, query, s.now())
-	} else {
-		ranked = rankFacts(facts, query, s.now())
-	}
+	ranked := rankCandidates(facts, terms, rels, candidates, query, s.now())
 	matches := make([]FactMatch, 0, len(ranked))
 	seen := make(map[string]bool, len(ranked))
 	for _, hit := range ranked {

@@ -62,8 +62,6 @@ func openSearchIndex(projectDir string, embedder EmbeddingProvider) (*searchInde
 	return idx, nil
 }
 
-func (idx *searchIndex) close() error { return idx.db.Close() }
-
 func (idx *searchIndex) init() error {
 	statements := []string{
 		`CREATE TABLE IF NOT EXISTS search_meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL)`,
@@ -189,28 +187,28 @@ func (idx *searchIndex) embeddingUpdates(corpus []searchFact, stored map[string]
 	return updates, nil
 }
 
-func (idx *searchIndex) reconcile(corpus []searchFact) error {
+func (idx *searchIndex) reconcile(corpus []searchFact) (int64, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		start, err := idx.generation()
 		if err != nil {
-			return err
+			return 0, err
 		}
 		rows, err := idx.db.Query(`SELECT rel, hash FROM search_docs`)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		stored := make(map[string]string)
 		for rows.Next() {
 			var rel, hash string
 			if err := rows.Scan(&rel, &hash); err != nil {
 				rows.Close()
-				return err
+				return 0, err
 			}
 			stored[rel] = hash
 		}
 		if err := rows.Err(); err != nil {
 			rows.Close()
-			return err
+			return 0, err
 		}
 		rows.Close()
 
@@ -218,13 +216,21 @@ func (idx *searchIndex) reconcile(corpus []searchFact) error {
 		if err != nil {
 			indexDiagnostic(err)
 		}
-		tx, err := idx.db.Begin()
-		if err != nil {
-			return err
-		}
 		current := make(map[string]bool, len(corpus))
+		dirty := len(stored) != len(corpus) || len(vectors) != 0
 		for _, fact := range corpus {
 			current[fact.RelPath] = true
+			dirty = dirty || stored[fact.RelPath] != fact.SourceHash
+		}
+		if !dirty {
+			return start, nil
+		}
+
+		tx, err := idx.db.Begin()
+		if err != nil {
+			return 0, err
+		}
+		for _, fact := range corpus {
 			vector, hasVector := vectors[fact.RelPath]
 			if stored[fact.RelPath] == fact.SourceHash && !hasVector {
 				continue
@@ -236,16 +242,18 @@ func (idx *searchIndex) reconcile(corpus []searchFact) error {
 					description=excluded.description, body=excluded.body, scene=excluded.scene`,
 					fact.RelPath, fact.SourceHash, fact.Name, fact.Description, fact.Body, fact.Scene); err != nil {
 					tx.Rollback()
-					return err
+					return 0, err
 				}
-				if _, err := tx.Exec(`DELETE FROM search_fts WHERE rel = ?`, fact.RelPath); err != nil {
-					tx.Rollback()
-					return err
+				if _, exists := stored[fact.RelPath]; exists {
+					if _, err := tx.Exec(`DELETE FROM search_fts WHERE rel = ?`, fact.RelPath); err != nil {
+						tx.Rollback()
+						return 0, err
+					}
 				}
 				if _, err := tx.Exec(`INSERT INTO search_fts(rel, tokens) VALUES (?, ?)`,
 					fact.RelPath, indexTokens(fact)); err != nil {
 					tx.Rollback()
-					return err
+					return 0, err
 				}
 			}
 			if !hasVector {
@@ -256,19 +264,19 @@ func (idx *searchIndex) reconcile(corpus []searchFact) error {
 			if errors.Is(err, sql.ErrNoRows) {
 				if err := tx.QueryRow(`SELECT COALESCE(MAX(rowid), 0) + 1 FROM search_vec_meta`).Scan(&rowID); err != nil {
 					tx.Rollback()
-					return err
+					return 0, err
 				}
 			} else if err != nil {
 				tx.Rollback()
-				return err
+				return 0, err
 			}
 			if _, err := tx.Exec(`DELETE FROM search_vec WHERE rowid = ?`, rowID); err != nil {
 				tx.Rollback()
-				return err
+				return 0, err
 			}
 			if _, err := tx.Exec(`INSERT INTO search_vec(rowid, embedding) VALUES (?, ?)`, rowID, vector); err != nil {
 				tx.Rollback()
-				return err
+				return 0, err
 			}
 			if _, err := tx.Exec(`INSERT INTO search_vec_meta(rowid, rel, hash, scene, provider, model)
 				VALUES (?, ?, ?, ?, ?, ?)
@@ -277,7 +285,7 @@ func (idx *searchIndex) reconcile(corpus []searchFact) error {
 				rowID, fact.RelPath, fact.SourceHash, fact.Scene,
 				idx.embedder.Name(), idx.embedder.Name()); err != nil {
 				tx.Rollback()
-				return err
+				return 0, err
 			}
 		}
 		for rel := range stored {
@@ -286,11 +294,11 @@ func (idx *searchIndex) reconcile(corpus []searchFact) error {
 			}
 			if _, err := tx.Exec(`DELETE FROM search_docs WHERE rel = ?`, rel); err != nil {
 				tx.Rollback()
-				return err
+				return 0, err
 			}
 			if _, err := tx.Exec(`DELETE FROM search_fts WHERE rel = ?`, rel); err != nil {
 				tx.Rollback()
-				return err
+				return 0, err
 			}
 			if idx.embedder != nil {
 				var rowID int64
@@ -298,40 +306,40 @@ func (idx *searchIndex) reconcile(corpus []searchFact) error {
 				if err == nil {
 					if _, err := tx.Exec(`DELETE FROM search_vec WHERE rowid = ?`, rowID); err != nil {
 						tx.Rollback()
-						return err
+						return 0, err
 					}
 					if _, err := tx.Exec(`DELETE FROM search_vec_meta WHERE rowid = ?`, rowID); err != nil {
 						tx.Rollback()
-						return err
+						return 0, err
 					}
 				} else if !errors.Is(err, sql.ErrNoRows) {
 					tx.Rollback()
-					return err
+					return 0, err
 				}
 			}
 		}
 		result, err := tx.Exec(`UPDATE search_meta SET value = value + 1 WHERE key = 'generation' AND value = ?`, start)
 		if err != nil {
 			tx.Rollback()
-			return err
+			return 0, err
 		}
 		changed, err := result.RowsAffected()
 		if err != nil || changed != 1 {
 			tx.Rollback()
 			if err != nil {
-				return err
+				return 0, err
 			}
 			if attempt == 0 {
 				continue
 			}
-			return errIndexGeneration
+			return 0, errIndexGeneration
 		}
 		if err := tx.Commit(); err != nil {
-			return err
+			return 0, err
 		}
-		return nil
+		return start + 1, nil
 	}
-	return errIndexGeneration
+	return 0, errIndexGeneration
 }
 
 func indexDiagnostic(err error) {
@@ -434,7 +442,8 @@ func (s *Store) RefreshSearch() error {
 	if err != nil {
 		return err
 	}
-	return idx.reconcile(corpus)
+	_, err = idx.reconcile(corpus)
+	return err
 }
 
 func (s *Store) semanticCandidates(query, scene string) (map[string]float64, error) {
@@ -445,35 +454,40 @@ func (s *Store) semanticCandidates(query, scene string) (map[string]float64, err
 	return idx.semanticCandidates(query, scene)
 }
 
-func (s *Store) indexedSearch(corpus []searchFact, query string) ([]searchFact, map[string]bool, bool) {
+func (s *Store) indexedSearch(corpus []searchFact, query string) map[string]bool {
 	idx, err := s.ensureSearchIndex()
 	if err != nil {
 		indexDiagnostic(err)
-		return corpus, nil, false
+		return nil
 	}
-	if err := idx.reconcile(corpus); err != nil {
+	generation, err := idx.reconcile(corpus)
+	if err != nil {
 		indexDiagnostic(err)
-		return corpus, nil, false
+		return nil
 	}
 	rels, err := idx.ftsCandidates(query)
 	if err != nil {
 		indexDiagnostic(err)
-		return corpus, nil, false
+		return nil
+	}
+	// Another process can publish an index for a different corpus while FTS runs.
+	current, err := idx.generation()
+	if err != nil {
+		indexDiagnostic(err)
+		return nil
+	}
+	if current != generation {
+		return nil
 	}
 	normalized := strings.TrimSpace(normalizeText(query))
 	phraseHit := func(text string) bool { return strings.Contains(normalizeText(text), normalized) }
 	for _, fact := range corpus {
+		if rels[fact.RelPath] {
+			continue
+		}
 		if phraseHit(fact.Name) || phraseHit(fact.Description) || phraseHit(fact.Body) {
 			rels[fact.RelPath] = true
 		}
 	}
-	out := make([]searchFact, 0, len(corpus))
-	selected := make(map[string]bool)
-	for _, fact := range corpus {
-		if rels[fact.RelPath] {
-			out = append(out, fact)
-			selected[fact.RelPath] = true
-		}
-	}
-	return out, selected, true
+	return rels
 }

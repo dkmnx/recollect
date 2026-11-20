@@ -2,10 +2,11 @@ package e2e
 
 // audit: behavior - the opt-in SQLite index mirrors filtered file search and stays derived from Markdown.
 // audit: regression - an index tied to the store could override or lose durable facts on refresh or corruption.
-// audit: coverage gap - existing search tests never enable the index or inspect its derived state.
+// audit: coverage gap - existing search tests do not inspect the index generation or exercise warm searches after same-size, same-mtime edits.
 // audit: seam - tests drive the built binary with JSON-RPC and inspect the private cache directory it creates.
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -13,6 +14,9 @@ import (
 	"runtime"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/ncruces/go-sqlite3/driver"
 )
 
 func writeFactFile(t *testing.T, project, name, description, body string) {
@@ -73,10 +77,28 @@ func TestSearchIndexParityAndDerivedState(t *testing.T) {
 		t.Fatalf("search cache is not private: %v", info)
 	}
 
+	// A warm search must leave the reconciled database read-only.
+	db, err := driver.Open("file:"+filepath.ToSlash(dbPath)+"?mode=ro", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	startGeneration := searchIndexGeneration(t, db)
+	if names := searchNamesRPC(t, c, "alpha"); len(names) != 1 || names[0] != "idx-1" {
+		t.Fatalf("warm indexed search = %v", names)
+	}
+	if generation := searchIndexGeneration(t, db); generation != startGeneration {
+		t.Errorf("unchanged search advanced generation from %d to %d", startGeneration, generation)
+	}
+
 	writeFactFile(t, d.project, "idx-1", "gamma topic", "visible gamma body")
 	if names := searchNamesRPC(t, c, "gamma"); len(names) != 1 || names[0] != "idx-1" {
 		t.Fatalf("out-of-band edit not reflected: %v", names)
 	}
+	if generation := searchIndexGeneration(t, db); generation <= startGeneration {
+		t.Errorf("edited fact did not advance generation past %d", startGeneration)
+	}
+
 	if names := searchNamesRPC(t, c, "alpha"); len(names) != 0 {
 		t.Fatalf("stale indexed terms survived: %v", names)
 	}
@@ -86,6 +108,82 @@ func TestSearchIndexParityAndDerivedState(t *testing.T) {
 	if names := searchNamesRPC(t, c, "gamma"); len(names) != 0 {
 		t.Fatalf("deleted fact still searchable: %v", names)
 	}
+}
+
+func TestWarmSearchReflectsFileChanges(t *testing.T) {
+	for _, backend := range []string{"markdown", "sqlite"} {
+		t.Run(backend, func(t *testing.T) {
+			setting := ""
+			if backend == "sqlite" {
+				setting = backend
+			}
+			t.Setenv("RECOLLECT_SEARCH_INDEX", setting)
+			d := tempDirs(t)
+			c := start(t)
+			defer c.cmd.Process.Kill()
+			initialize(t, c, d, "cache-harness", map[string]int{"major": 1})
+			if err := os.MkdirAll(d.project, 0o755); err != nil {
+				t.Fatal(err)
+			}
+
+			writeFactFile(t, d.project, "first", "shared topic", "visible alpha")
+			writeFactFile(t, d.project, "other", "shared topic", "visible omega")
+			first := filepath.Join(d.project, "first.md")
+			other := filepath.Join(d.project, "other.md")
+			older := time.Now().Add(-30 * 24 * time.Hour)
+			newer := older.Add(24 * time.Hour)
+			setTime := func(path string, stamp time.Time) {
+				t.Helper()
+				if err := os.Chtimes(path, stamp, stamp); err != nil {
+					t.Fatal(err)
+				}
+			}
+			setTime(first, newer)
+			setTime(other, older)
+			if names := searchNamesRPC(t, c, "shared"); len(names) != 2 || names[0] != "first" {
+				t.Fatalf("initial order = %v", names)
+			}
+			setTime(first, older.Add(-24*time.Hour))
+			if names := searchNamesRPC(t, c, "shared"); len(names) != 2 || names[0] != "other" {
+				t.Fatalf("mtime-only change did not update ranking: %v", names)
+			}
+
+			before, err := os.Stat(first)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeFactFile(t, d.project, "first", "shared topic", "visible gamma")
+			setTime(first, before.ModTime())
+			after, err := os.Stat(first)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+				t.Fatal("replacement fixture must preserve size and mtime")
+			}
+			if names := searchNamesRPC(t, c, "alpha"); len(names) != 0 {
+				t.Fatalf("old content still searchable: %v", names)
+			}
+			if names := searchNamesRPC(t, c, "gamma"); len(names) != 1 || names[0] != "first" {
+				t.Fatalf("changed content not found: %v", names)
+			}
+			if err := os.Remove(first); err != nil {
+				t.Fatal(err)
+			}
+			if names := searchNamesRPC(t, c, "gamma"); len(names) != 0 {
+				t.Fatalf("deleted content still searchable: %v", names)
+			}
+		})
+	}
+}
+
+func searchIndexGeneration(t *testing.T, db *sql.DB) int64 {
+	t.Helper()
+	var value int64
+	if err := db.QueryRow("SELECT value FROM search_meta WHERE key = 'generation'").Scan(&value); err != nil {
+		t.Fatal(err)
+	}
+	return value
 }
 
 func TestSearchIndexFallsBackOnCorruptDatabase(t *testing.T) {
