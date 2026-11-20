@@ -3,12 +3,33 @@
   "version": "0.1.0",
   "type": "module",
   "description": "OpenCode adapter for the Recollect memory engine",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dkmnx/recollect.git",
+    "directory": "adapters/opencode"
+  },
+  "homepage": "https://github.com/dkmnx/recollect/tree/main/adapters/opencode",
+  "bugs": {
+    "url": "https://github.com/dkmnx/recollect/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "memory",
+    "recollect",
+    "agent"
+  ],
   "exports": {
     ".": "./src/index.ts"
   },
   "files": [
-    "src"
+    "src/*.ts",
+    "!src/*.test.ts"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "@opencode/plugin": ">=2.3.0",
     "effect": ">=4.0.1"
