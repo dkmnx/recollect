@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [v0.1.0] - 2026-11-21
 
 ### Added
 
@@ -31,9 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   byte-preserving source files.
 - Public Go facades for memory, engine, jobs, render, and imports.
 - OpenCode adapter that starts the engine, exposes the memory tool, registers
-  commands, and captures session events.
-- `recollect` stdio binary and the `cmd/demo` quickstart.
+  commands, captures session events, and finds the binary from config, the
+  environment, `PATH`, or the default install directory.
+- `recollect` stdio binary with `version`, `doctor`, and `setup opencode`
+  commands, plus the `cmd/demo` quickstart.
+- Checksum-verified install scripts for POSIX and Windows.
+- Tag-triggered release archives for Linux, macOS, and Windows with SHA-256
+  checksums.
 - Cross-platform atomic replacement and advisory locks for Linux and Windows,
   including a user-only Windows search cache.
 
-[Unreleased]: https://github.com/dkmnx/recollect/compare/9ddfd25cb1f64ff34c071785c27100c5caa5ae71...HEAD
+[v0.1.0]: https://github.com/dkmnx/recollect/compare/9ddfd25cb1f64ff34c071785c27100c5caa5ae71...v0.1.0

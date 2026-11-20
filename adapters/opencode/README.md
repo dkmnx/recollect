@@ -9,8 +9,8 @@ events for durable memory.
 ## Requirements
 
 - OpenCode 2.3.0 or later.
-- The `recollect` engine binary from a release, `go install`, or a source
-  build.
+- The `recollect` engine binary, v0.1.0 or later, from a release, `go install`,
+  or a source build.
 - Bun only for adapter development and tests.
 
 ## Install the engine
@@ -197,6 +197,16 @@ change.
 - `/recollect-status` reports engine health and pending work.
 - `/recollect-refresh` replaces the session memory snapshot.
 
+## Test
+
+Run the adapter checks from this directory.
+
+```sh
+bun install --frozen-lockfile
+bun run typecheck
+bun test
+```
+
 ## Troubleshooting
 
 - **Plugin does not load.** Check that `package` points at the adapter
@@ -213,12 +223,6 @@ change.
 - **Capture is disabled.** Set `generationPolicy` to `host` and confirm the
   host exposes `experimental.generate.text`.
 
-## Test
+## Changelog
 
-Run the adapter checks from this directory.
-
-```sh
-bun install --frozen-lockfile
-bun run typecheck
-bun test
-```
+See [CHANGELOG.md](CHANGELOG.md).

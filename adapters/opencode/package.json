@@ -25,7 +25,8 @@
   },
   "files": [
     "src/*.ts",
-    "!src/*.test.ts"
+    "!src/*.test.ts",
+    "CHANGELOG.md"
   ],
   "publishConfig": {
     "access": "public"
