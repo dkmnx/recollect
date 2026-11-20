@@ -88,7 +88,8 @@ func validatePrivateDir(path string) error {
 			!windows.EqualSid(sid, user.User.Sid) ||
 			ace.Mask == 0 ||
 			ace.Header.AceFlags&(windows.OBJECT_INHERIT_ACE|windows.CONTAINER_INHERIT_ACE) == 0 {
-			return fmt.Errorf("search cache DACL entry %d grants access to another trustee", i)
+			return fmt.Errorf("search cache DACL entry %d rejected: type=%d sid=%s want=%s mask=%#x flags=%#x",
+				i, ace.Header.AceType, sid.String(), user.User.Sid.String(), ace.Mask, ace.Header.AceFlags)
 		}
 	}
 	return nil
