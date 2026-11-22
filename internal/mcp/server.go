@@ -5,6 +5,7 @@ package mcp
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,7 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/dkmnx/recollect/internal/engine"
 	"github.com/dkmnx/recollect/internal/memory"
@@ -38,6 +42,7 @@ type Request struct {
 	ID      json.RawMessage `json:"id"`
 	Method  string          `json:"method"`
 	Params  json.RawMessage `json:"params"`
+	Result  json.RawMessage `json:"result"`
 }
 
 // Response is one JSON-RPC reply.
@@ -54,21 +59,46 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// Opened is a bound project and its dependencies.
+type Opened struct {
+	Deps     rpc.Deps
+	Root     string
+	Generate func(context.Context, string) (string, error)
+	Timeout  time.Duration
+}
+
+// Options configures one MCP server process.
+type Options struct {
+	ProjectHint  string
+	ProjectFixed bool
+	Harness      string
+	Version      string
+	Open         func(dir string) (Opened, error)
+	Start        func(Opened) (stop func())
+}
+
 type server struct {
-	deps    rpc.Deps
-	root    string
-	harness string
-	version string
-	enc     *json.Encoder
+	opts         Options
+	deps         rpc.Deps
+	root         string
+	harness      string
+	version      string
+	bound        bool
+	canRebind    bool
+	rootsPending bool
+	stop         func()
+	scanner      *bufio.Scanner
+	enc          *json.Encoder
 }
 
 // Serve reads MCP JSON-RPC frames from in and writes replies to out.
-func Serve(in io.Reader, out io.Writer, deps rpc.Deps, root, harness, version string) error {
-	s := &server{deps: deps, root: root, harness: harness, version: version, enc: json.NewEncoder(out)}
-	scanner := bufio.NewScanner(in)
-	scanner.Buffer(make([]byte, 0, 64*1024), maxFrameBytes)
-	for scanner.Scan() {
-		line := bytes.TrimSpace(scanner.Bytes())
+func Serve(in io.Reader, out io.Writer, opts Options) error {
+	s := &server{opts: opts, harness: opts.Harness, version: opts.Version, enc: json.NewEncoder(out)}
+	s.scanner = bufio.NewScanner(in)
+	s.scanner.Buffer(make([]byte, 0, 64*1024), maxFrameBytes)
+	defer s.close()
+	for s.scanner.Scan() {
+		line := bytes.TrimSpace(s.scanner.Bytes())
 		if len(line) == 0 {
 			continue
 		}
@@ -76,7 +106,17 @@ func Serve(in io.Reader, out io.Writer, deps rpc.Deps, root, harness, version st
 			return err
 		}
 	}
-	return scanner.Err()
+	return s.scanner.Err()
+}
+
+func (s *server) close() {
+	if s.stop != nil {
+		s.stop()
+		s.stop = nil
+	}
+	if s.deps.Store != nil {
+		s.deps.Store.Close()
+	}
 }
 
 func (s *server) handle(line []byte) error {
@@ -84,18 +124,26 @@ func (s *server) handle(line []byte) error {
 	if err := json.Unmarshal(line, &req); err != nil {
 		return s.reply(nil, nil, &Error{Code: codeParseError, Message: "parse error"})
 	}
-	if req.JSONRPC != jsonRPCVersion || req.Method == "" {
+	if req.JSONRPC != jsonRPCVersion {
 		return s.reply(req.ID, nil, &Error{Code: codeInvalidReq, Message: "invalid request"})
 	}
 	// JSON-RPC notifications carry no id and must never receive a reply.
 	if len(req.ID) == 0 {
+		if req.Method == "notifications/initialized" {
+			s.requestRoots()
+		}
 		return nil
+	}
+	if req.Method == "" {
+		s.handleRootsResponse(req)
+		return nil
+	}
+	if !s.bound && req.Method != "initialize" && req.Method != "ping" {
+		return s.reply(req.ID, nil, &Error{Code: codeInvalidReq, Message: "initialize required"})
 	}
 	switch req.Method {
 	case "initialize":
 		return s.initialize(req)
-	case "notifications/initialized":
-		return nil
 	case "ping":
 		return s.reply(req.ID, map[string]any{}, nil)
 	case "tools/list":
@@ -120,12 +168,18 @@ func (s *server) reply(id json.RawMessage, result any, err *Error) error {
 
 type initParams struct {
 	ProtocolVersion string `json:"protocolVersion"`
-	ClientInfo      struct {
+	Capabilities    struct {
+		Roots json.RawMessage `json:"roots"`
+	} `json:"capabilities"`
+	ClientInfo struct {
 		Name string `json:"name"`
 	} `json:"clientInfo"`
 }
 
 func (s *server) initialize(req Request) error {
+	if s.bound {
+		return s.reply(req.ID, nil, &Error{Code: codeInvalidReq, Message: "already initialized"})
+	}
 	var p initParams
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		return s.reply(req.ID, nil, &Error{Code: codeInvalidReq, Message: "invalid initialize params"})
@@ -133,18 +187,117 @@ func (s *server) initialize(req Request) error {
 	if s.harness == "" && strings.TrimSpace(p.ClientInfo.Name) != "" {
 		s.harness = p.ClientInfo.Name
 	}
+	project := s.opts.ProjectHint
+	opened, err := s.opts.Open(project)
+	if err != nil {
+		return s.reply(req.ID, nil, &Error{Code: codeInternal, Message: "cannot open project"})
+	}
+	s.deps = opened.Deps
+	s.root = opened.Root
+	s.bound = true
+	s.canRebind = !s.opts.ProjectFixed && len(p.Capabilities.Roots) > 0 && string(p.Capabilities.Roots) != "null"
+	if s.opts.Start != nil {
+		s.stop = s.opts.Start(opened)
+	}
 	version := newestProtocol
 	if strings.TrimSpace(p.ProtocolVersion) == newestProtocol {
 		version = p.ProtocolVersion
 	}
-	return s.reply(req.ID, map[string]any{
+	if err := s.reply(req.ID, map[string]any{
 		"protocolVersion": version,
 		"capabilities": map[string]any{
 			"tools":     map[string]any{},
 			"resources": map[string]any{},
 		},
 		"serverInfo": map[string]any{"name": "recollect", "version": s.version},
-	}, nil)
+	}, nil); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *server) requestRoots() {
+	if !s.canRebind || s.rootsPending {
+		return
+	}
+	id := json.RawMessage(`"recollect-roots"`)
+	if err := s.enc.Encode(Request{JSONRPC: jsonRPCVersion, ID: id, Method: "roots/list"}); err != nil {
+		return
+	}
+	s.rootsPending = true
+}
+
+func (s *server) handleRootsResponse(req Request) {
+	if !s.rootsPending || !sameID(req.ID, json.RawMessage(`"recollect-roots"`)) {
+		return
+	}
+	s.rootsPending = false
+	if !s.canRebind {
+		return
+	}
+	var result struct {
+		Roots []struct {
+			URI string `json:"uri"`
+		} `json:"roots"`
+	}
+	if err := json.Unmarshal(req.Result, &result); err != nil {
+		return
+	}
+	for _, root := range result.Roots {
+		dir, ok := filePathForOS(runtime.GOOS, root.URI)
+		if !ok {
+			continue
+		}
+		opened, err := s.opts.Open(dir)
+		if err != nil {
+			return
+		}
+		if s.stop != nil {
+			s.stop()
+			s.stop = nil
+		}
+		if s.deps.Store != nil {
+			s.deps.Store.Close()
+		}
+		s.deps = opened.Deps
+		s.root = opened.Root
+		s.canRebind = false
+		if s.opts.Start != nil {
+			s.stop = s.opts.Start(opened)
+		}
+		return
+	}
+}
+
+func sameID(a, b json.RawMessage) bool {
+	var left, right string
+	if json.Unmarshal(a, &left) != nil || json.Unmarshal(b, &right) != nil {
+		return false
+	}
+	return left == right
+}
+
+func filePathForOS(goos, uri string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(uri))
+	if err != nil || parsed.Scheme != "file" {
+		return "", false
+	}
+	host := parsed.Host
+	path := parsed.Path
+	if goos == "windows" {
+		path = strings.ReplaceAll(path, "/", `\`)
+		if host != "" && !strings.EqualFold(host, "localhost") {
+			return `\\` + host + path, true
+		}
+		if len(path) >= 3 && path[0] == '\\' && path[2] == ':' {
+			path = path[1:]
+		}
+		return path, path != ""
+	}
+	if host != "" && !strings.EqualFold(host, "localhost") {
+		return "", false
+	}
+	return path, path != ""
 }
 
 func toolList() []map[string]any {
@@ -218,6 +371,7 @@ type callParams struct {
 }
 
 func (s *server) callTool(req Request) error {
+	s.canRebind = false
 	var p callParams
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		return s.reply(req.ID, nil, &Error{Code: codeInvalidArgs, Message: "invalid tool params"})
@@ -486,6 +640,7 @@ func resources() []map[string]any {
 }
 
 func (s *server) readResource(req Request) error {
+	s.canRebind = false
 	var p struct {
 		URI string `json:"uri"`
 	}

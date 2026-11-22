@@ -6,11 +6,15 @@ package mcp_test
 // audit: seam - the test drives Serve over in-memory frames with real engine deps in temp dirs.
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -53,11 +57,11 @@ func frame(id int, method, params string) string {
 	return fmt.Sprintf(`{"jsonrpc":"2.0","id":%d,"method":%q,"params":%s}`, id, method, params)
 }
 
-func runFrames(t *testing.T, deps rpc.Deps, frames []string) []wireResponse {
+func runWith(t *testing.T, opts mcp.Options, frames []string) []wireResponse {
 	t.Helper()
 	var out bytes.Buffer
 	in := strings.NewReader(strings.Join(frames, "\n") + "\n")
-	if err := mcp.Serve(in, &out, deps, "", "mcp", "test"); err != nil {
+	if err := mcp.Serve(in, &out, opts); err != nil {
 		t.Fatalf("Serve: %v", err)
 	}
 	var replies []wireResponse
@@ -70,6 +74,14 @@ func runFrames(t *testing.T, deps rpc.Deps, frames []string) []wireResponse {
 		replies = append(replies, reply)
 	}
 	return replies
+}
+
+func runFrames(t *testing.T, deps rpc.Deps, frames []string) []wireResponse {
+	t.Helper()
+	return runWith(t, mcp.Options{
+		Harness: "mcp", Version: "test",
+		Open: func(string) (mcp.Opened, error) { return mcp.Opened{Deps: deps}, nil },
+	}, frames)
 }
 
 func TestServerTranscript(t *testing.T) {
@@ -149,6 +161,12 @@ func TestServerTranscript(t *testing.T) {
 	}
 }
 
+func withInit(frames ...string) []string {
+	return append([]string{
+		frame(99, "initialize", `{"protocolVersion":"2024-11-05"}`),
+	}, frames...)
+}
+
 func toolContent(t *testing.T, reply wireResponse) (string, bool) {
 	t.Helper()
 	if reply.Error != nil {
@@ -180,25 +198,25 @@ func toolText(t *testing.T, reply wireResponse) string {
 
 func TestUserCorrectionRequiresBody(t *testing.T) {
 	deps := openTestDeps(t)
-	first := runFrames(t, deps, []string{
+	first := runFrames(t, deps, withInit(
 		frame(1, "tools/call", `{"name":"memory_save","arguments":{"target":"user","description":"user memory","body":"keep me","reason":"initial"}}`),
 		frame(2, "tools/call", `{"name":"memory_read","arguments":{"target":"user"}}`),
-	})
+	))
 	var before struct {
 		Revision string `json:"revision"`
 		Content  string `json:"content"`
 	}
-	if err := json.Unmarshal([]byte(toolText(t, first[1])), &before); err != nil {
+	if err := json.Unmarshal([]byte(toolText(t, first[2])), &before); err != nil {
 		t.Fatal(err)
 	}
-	second := runFrames(t, deps, []string{
+	second := runFrames(t, deps, withInit(
 		frame(3, "tools/call", fmt.Sprintf(
 			`{"name":"memory_correct","arguments":{"target":"user","name":"user","description":"changed","revision":%q}}`,
 			before.Revision,
 		)),
 		frame(4, "tools/call", `{"name":"memory_read","arguments":{"target":"user"}}`),
-	})
-	rejected, isError := toolContent(t, second[0])
+	))
+	rejected, isError := toolContent(t, second[1])
 	if !isError || !strings.Contains(rejected, "nonblank body") {
 		t.Fatalf("correction = %q, isError = %v", rejected, isError)
 	}
@@ -206,7 +224,7 @@ func TestUserCorrectionRequiresBody(t *testing.T) {
 		Revision string `json:"revision"`
 		Content  string `json:"content"`
 	}
-	if err := json.Unmarshal([]byte(toolText(t, second[1])), &after); err != nil {
+	if err := json.Unmarshal([]byte(toolText(t, second[2])), &after); err != nil {
 		t.Fatal(err)
 	}
 	if after.Revision != before.Revision || after.Content != before.Content {
@@ -216,35 +234,160 @@ func TestUserCorrectionRequiresBody(t *testing.T) {
 
 func TestToolErrorsArePathFree(t *testing.T) {
 	deps := openTestDeps(t)
-	replies := runFrames(t, deps, []string{
+	replies := runFrames(t, deps, withInit(
 		frame(1, "tools/call", `{"name":"memory_correct","arguments":{"name":"missing","revision":"stale"}}`),
 		frame(2, "tools/call", `{"name":"memory_save","arguments":{"target":"global","description":"x"}}`),
 		frame(3, "tools/call", `{"name":"memory_read","arguments":{}}`),
-	})
-	notFound, isError := toolContent(t, replies[0])
+	))
+	notFound, isError := toolContent(t, replies[1])
 	if !isError || !strings.Contains(notFound, "was not found") {
 		t.Fatalf("missing fact = %q, isError = %v", notFound, isError)
 	}
 	if strings.ContainsAny(notFound, `/\`) {
 		t.Fatalf("missing fact leaked a path: %q", notFound)
 	}
-	if target, isError := toolContent(t, replies[1]); !isError || !strings.Contains(target, "target must be") {
+	if target, isError := toolContent(t, replies[2]); !isError || !strings.Contains(target, "target must be") {
 		t.Fatalf("bad target = %q, isError = %v", target, isError)
 	}
-	if name, isError := toolContent(t, replies[2]); !isError || !strings.Contains(name, "name is required") {
+	if name, isError := toolContent(t, replies[3]); !isError || !strings.Contains(name, "name is required") {
 		t.Fatalf("missing name = %q, isError = %v", name, isError)
+	}
+}
+
+func TestRootsNegotiation(t *testing.T) {
+	rooted := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(rooted, ".git"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(rooted, "user"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	opened := make(chan string, 2)
+	opts := mcp.Options{
+		ProjectHint: t.TempDir(), Harness: "roots", Version: "test",
+		Open: func(dir string) (mcp.Opened, error) {
+			opened <- dir
+			if err := os.MkdirAll(filepath.Join(dir, "user"), 0o700); err != nil {
+				return mcp.Opened{}, err
+			}
+			deps, err := rpc.OpenBindings(rpc.Bindings{
+				ProjectDir: dir, ProjectRoot: dir, UserDir: filepath.Join(dir, "user"),
+				HarnessID: "roots", Protocol: rpc.Protocol{Major: 1},
+			})
+			return mcp.Opened{Deps: deps, Root: dir}, err
+		},
+	}
+
+	serverIn, clientOut := io.Pipe()
+	clientIn, serverOut := io.Pipe()
+	errc := make(chan error, 1)
+	go func() { errc <- mcp.Serve(serverIn, serverOut, opts) }()
+
+	path := filepath.ToSlash(rooted)
+	if runtime.GOOS == "windows" && !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	uri := (&url.URL{Scheme: "file", Path: path}).String()
+	reader := bufio.NewReader(clientIn)
+	fmt.Fprintf(clientOut, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{"roots":{}},"clientInfo":{"name":"roots"}}}`+"\n")
+	if _, err := reader.ReadString('\n'); err != nil {
+		t.Fatal(err)
+	}
+
+	fmt.Fprintf(clientOut, `{"jsonrpc":"2.0","method":"notifications/initialized"}`+"\n")
+	request, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(request, `"roots/list"`) {
+		t.Fatalf("request = %q", request)
+	}
+	fmt.Fprintf(clientOut, `{"jsonrpc":"2.0","id":"recollect-roots","result":{"roots":[{"uri":%q}]}}`+"\n", uri)
+	fmt.Fprintf(clientOut, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"memory_context","arguments":{}}}`+"\n")
+	if _, err := reader.ReadString('\n'); err != nil {
+		t.Fatal(err)
+	}
+
+	clientOut.Close()
+	if err := <-errc; err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	if first := <-opened; first == rooted {
+		t.Fatalf("first bind used the root before the roots response")
+	}
+	if second := <-opened; second != rooted {
+		t.Fatalf("rebind used %q, want %q", second, rooted)
+	}
+}
+
+func TestPreInitializeRejected(t *testing.T) {
+	deps := openTestDeps(t)
+	replies := runFrames(t, deps, []string{
+		frame(1, "tools/call", `{"name":"memory_context","arguments":{}}`),
+		frame(2, "ping", `{}`),
+	})
+	if len(replies) != 2 {
+		t.Fatalf("replies = %d, want 2", len(replies))
+	}
+	if replies[0].Error == nil || replies[0].Error.Code != -32600 {
+		t.Fatalf("pre-initialize tool = %+v", replies[0].Error)
+	}
+	if replies[1].Error != nil {
+		t.Fatalf("pre-initialize ping = %+v", replies[1].Error)
+	}
+}
+
+func TestDoubleInitialize(t *testing.T) {
+	deps := openTestDeps(t)
+	replies := runFrames(t, deps, []string{
+		frame(1, "initialize", `{"protocolVersion":"2024-11-05"}`),
+		frame(2, "initialize", `{"protocolVersion":"2024-11-05"}`),
+	})
+	if len(replies) != 2 {
+		t.Fatalf("replies = %d, want 2", len(replies))
+	}
+	if replies[1].Error == nil || replies[1].Error.Code != -32600 {
+		t.Fatalf("second initialize = %+v", replies[1].Error)
+	}
+}
+
+func TestProjectFixedSkipsRoots(t *testing.T) {
+	hint := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(hint, "user"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	opened := make(chan string, 1)
+	opts := mcp.Options{
+		ProjectHint: hint, ProjectFixed: true, Harness: "fixed", Version: "test",
+		Open: func(dir string) (mcp.Opened, error) {
+			opened <- dir
+			deps, err := rpc.OpenBindings(rpc.Bindings{
+				ProjectDir: dir, ProjectRoot: dir, UserDir: filepath.Join(dir, "user"),
+				HarnessID: "fixed", Protocol: rpc.Protocol{Major: 1},
+			})
+			return mcp.Opened{Deps: deps, Root: dir}, err
+		},
+	}
+	replies := runWith(t, opts, []string{
+		frame(1, "initialize", `{"protocolVersion":"2024-11-05","capabilities":{"roots":{}}}`),
+	})
+	if len(replies) != 1 || replies[0].Error != nil {
+		t.Fatalf("initialize = %+v", replies[0].Error)
+	}
+	if got := <-opened; got != hint {
+		t.Fatalf("opened %q, want hint %q", got, hint)
 	}
 }
 
 func TestSaveRedactsCredentials(t *testing.T) {
 	deps := openTestDeps(t)
-	replies := runFrames(t, deps, []string{
+	replies := runFrames(t, deps, withInit(
 		frame(1, "tools/call", `{"name":"memory_save","arguments":{"description":"API note","body":"api key: AKIAIOSFODNN7EXAMPLE"}}`),
-	})
+	))
 	var saved struct {
 		Name string `json:"name"`
 	}
-	if err := json.Unmarshal([]byte(toolText(t, replies[0])), &saved); err != nil {
+	if err := json.Unmarshal([]byte(toolText(t, replies[1])), &saved); err != nil {
 		t.Fatal(err)
 	}
 	fact, err := deps.Store.ReadFact(saved.Name)

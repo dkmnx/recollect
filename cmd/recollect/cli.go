@@ -263,57 +263,63 @@ func runMCP(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "usage: recollect mcp [--project DIR] [--harness NAME]")
 		return 2
 	}
-	resolved, err := bindings.Resolve(*project, "")
-	if err != nil {
-		fmt.Fprintln(stderr, "recollect:", err)
-		return 1
+	opts := mcp.Options{
+		ProjectHint:  *project,
+		ProjectFixed: strings.TrimSpace(*project) != "",
+		Harness:      *harness,
+		Version:      buildVersion(),
+		Open: func(dir string) (mcp.Opened, error) {
+			resolved, err := bindings.Resolve(dir, "")
+			if err != nil {
+				return mcp.Opened{}, err
+			}
+			cfg, err := config.LoadUserDir(resolved.UserDir)
+			if err != nil {
+				return mcp.Opened{}, err
+			}
+			deps, err := openDeps(rpc.Bindings{
+				ProjectDir:   resolved.ProjectDir,
+				ProjectRoot:  resolved.ProjectRoot,
+				UserDir:      resolved.UserDir,
+				HarnessID:    *harness,
+				Capabilities: []string{"generation", "events", "context"},
+				Protocol:     rpc.Protocol{Major: 1},
+			}, cfg, stderr)
+			if err != nil {
+				return mcp.Opened{}, err
+			}
+			generator, err := buildGenerator(cfg.Generation, stderr)
+			if err != nil {
+				deps.Store.Close()
+				return mcp.Opened{}, err
+			}
+			if configured := time.Duration(cfg.Generation.TimeoutSeconds) * time.Second; configured > jobs.MaxGenerationTimeout {
+				fmt.Fprintf(stderr, "recollect: generation timeout capped at %s to stay within the job lease\n", jobs.MaxGenerationTimeout)
+			}
+			return mcp.Opened{
+				Deps: deps, Root: resolved.ProjectRoot, Generate: generator,
+				Timeout: time.Duration(cfg.Generation.TimeoutSeconds) * time.Second,
+			}, nil
+		},
+		Start: func(opened mcp.Opened) func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			runner := &jobs.Runner{
+				Queue: opened.Deps.Jobs, Harness: *harness, Generation: opened.Generate != nil,
+				Timeout: opened.Timeout, Generate: opened.Generate,
+				Log: func(err error) { fmt.Fprintln(stderr, "recollect:", err) },
+			}
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				runner.Run(ctx)
+			}()
+			return func() {
+				cancel()
+				<-done
+			}
+		},
 	}
-	cfg, err := config.LoadUserDir(resolved.UserDir)
-	if err != nil {
-		fmt.Fprintln(stderr, "recollect:", err)
-		return 1
-	}
-	deps, err := openDeps(rpc.Bindings{
-		ProjectDir:   resolved.ProjectDir,
-		ProjectRoot:  resolved.ProjectRoot,
-		UserDir:      resolved.UserDir,
-		HarnessID:    *harness,
-		Capabilities: []string{"generation", "events", "context"},
-		Protocol:     rpc.Protocol{Major: 1},
-	}, cfg, stderr)
-	if err != nil {
-		fmt.Fprintln(stderr, "recollect:", err)
-		return 1
-	}
-	generator, err := buildGenerator(cfg.Generation, stderr)
-	if err != nil {
-		fmt.Fprintln(stderr, "recollect:", err)
-		return 1
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	if configured := time.Duration(cfg.Generation.TimeoutSeconds) * time.Second; configured > jobs.MaxGenerationTimeout {
-		fmt.Fprintf(stderr, "recollect: generation timeout capped at %s to stay within the job lease\n", jobs.MaxGenerationTimeout)
-	}
-	runner := &jobs.Runner{
-		Queue:      deps.Jobs,
-		Harness:    *harness,
-		Generation: generator != nil,
-		Timeout:    time.Duration(cfg.Generation.TimeoutSeconds) * time.Second,
-		Generate:   generator,
-		Log:        func(err error) { fmt.Fprintln(stderr, "recollect:", err) },
-	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		runner.Run(ctx)
-	}()
-	defer func() {
-		cancel()
-		<-done
-		deps.Store.Close()
-	}()
-
-	if err := mcp.Serve(os.Stdin, stdout, deps, resolved.ProjectRoot, *harness, buildVersion()); err != nil {
+	if err := mcp.Serve(os.Stdin, stdout, opts); err != nil {
 		fmt.Fprintln(stderr, "recollect:", err)
 		return 1
 	}
