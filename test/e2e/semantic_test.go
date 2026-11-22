@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dkmnx/recollect/internal/memory"
 )
@@ -152,6 +153,10 @@ func TestHybridWithoutEndpointFailsInitialize(t *testing.T) {
 	})
 	if resp.Error == nil || resp.Error.Code != -32006 {
 		t.Fatalf("initialize = %+v, want storage failure", resp.Error)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for !strings.Contains(c.stderr.String(), "hybrid search requires embedding.baseURL") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
 	}
 	if !strings.Contains(c.stderr.String(), "hybrid search requires embedding.baseURL") {
 		t.Fatalf("stderr = %q", c.stderr.String())
