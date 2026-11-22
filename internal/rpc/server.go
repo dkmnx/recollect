@@ -175,6 +175,9 @@ func (s *server) reply(id json.RawMessage, result any, err *Error) error {
 	}
 	resp := Response{JSONRPC: jsonRPCVersion, ID: id, Error: err}
 	if err != nil {
+		// lastErrorCode is the latest error message. Domain errors use stable,
+		// path-free identifiers the adapter displays; an unknown method echoes
+		// the caller's method text.
 		s.lastErrorCode = err.Message
 	}
 	if err == nil {
