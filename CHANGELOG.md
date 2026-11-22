@@ -5,6 +5,19 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.1.1] - 2026-11-22
+
+### Changed
+
+- Installation examples now use `@latest` and a `vX.Y.Z` placeholder instead of
+  a fixed release. The README badge tracks the latest GitHub release.
+
+### Fixed
+
+- Search matches now return the filtered fact body in `body` and the credited
+  field label in a separate `field` property. Lexical matches populate `body`;
+  semantic matches leave it empty. Read responses omit `field`.
+
 ## [v0.1.0] - 2026-11-21
 
 ### Added
@@ -42,3 +55,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   including a user-only Windows search cache.
 
 [v0.1.0]: https://github.com/dkmnx/recollect/compare/9ddfd25cb1f64ff34c071785c27100c5caa5ae71...v0.1.0
+[v0.1.1]: https://github.com/dkmnx/recollect/compare/v0.1.0...v0.1.1
