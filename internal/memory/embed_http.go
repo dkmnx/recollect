@@ -8,6 +8,12 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
+)
+
+const (
+	httpEmbedTimeout          = 30 * time.Second
+	httpEmbedMaxResponseBytes = 16 << 20
 )
 
 // HTTPEmbedConfig identifies a host-supplied embeddings endpoint.
@@ -25,7 +31,7 @@ type httpEmbedder struct {
 
 // NewHTTPEmbedder returns an embedder that calls an OpenAI-compatible endpoint.
 func NewHTTPEmbedder(config HTTPEmbedConfig) EmbeddingProvider {
-	return &httpEmbedder{config: config, client: &http.Client{}}
+	return &httpEmbedder{config: config, client: &http.Client{Timeout: httpEmbedTimeout}}
 }
 
 func (e *httpEmbedder) Dimensions() int { return e.config.Dimensions }
@@ -57,12 +63,19 @@ func (e *httpEmbedder) Embed(ctx context.Context, texts []string) ([][]float32, 
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return nil, fmt.Errorf("embeddings: status %d: %s", resp.StatusCode, data)
 	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, httpEmbedMaxResponseBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > httpEmbedMaxResponseBytes {
+		return nil, fmt.Errorf("embeddings: response too large (limit %d bytes)", httpEmbedMaxResponseBytes)
+	}
 	var result struct {
 		Data []struct {
 			Embedding []float32 `json:"embedding"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
 	if len(result.Data) != len(texts) {
