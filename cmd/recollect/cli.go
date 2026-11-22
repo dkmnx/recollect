@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -11,9 +12,11 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"time"
 
 	"github.com/dkmnx/recollect/internal/bindings"
 	"github.com/dkmnx/recollect/internal/config"
+	"github.com/dkmnx/recollect/internal/jobs"
 	"github.com/dkmnx/recollect/internal/mcp"
 	"github.com/dkmnx/recollect/internal/rpc"
 	"github.com/dkmnx/recollect/memory"
@@ -282,7 +285,34 @@ func runMCP(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "recollect:", err)
 		return 1
 	}
-	defer deps.Store.Close()
+	generator, err := buildGenerator(cfg.Generation, stderr)
+	if err != nil {
+		fmt.Fprintln(stderr, "recollect:", err)
+		return 1
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if configured := time.Duration(cfg.Generation.TimeoutSeconds) * time.Second; configured > jobs.MaxGenerationTimeout {
+		fmt.Fprintf(stderr, "recollect: generation timeout capped at %s to stay within the job lease\n", jobs.MaxGenerationTimeout)
+	}
+	runner := &jobs.Runner{
+		Queue:      deps.Jobs,
+		Harness:    *harness,
+		Generation: generator != nil,
+		Timeout:    time.Duration(cfg.Generation.TimeoutSeconds) * time.Second,
+		Generate:   generator,
+		Log:        func(err error) { fmt.Fprintln(stderr, "recollect:", err) },
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		runner.Run(ctx)
+	}()
+	defer func() {
+		cancel()
+		<-done
+		deps.Store.Close()
+	}()
+
 	if err := mcp.Serve(os.Stdin, stdout, deps, resolved.ProjectRoot, *harness, buildVersion()); err != nil {
 		fmt.Fprintln(stderr, "recollect:", err)
 		return 1
