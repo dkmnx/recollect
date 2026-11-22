@@ -29,6 +29,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runDoctor(args[1:], stdout, stderr)
 	case "resolve":
 		return runResolve(args[1:], stdout, stderr)
+	case "mcp":
+		return runMCP(args[1:], stdout, stderr)
 	case "setup":
 		return runSetup(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
@@ -48,29 +50,32 @@ func serve(stderr io.Writer) int {
 			fmt.Fprintln(stderr, "recollect:", err)
 			return rpc.Deps{}, err
 		}
-		searchBackend := cfg.Search.Backend
-		if searchBackend == "lexical" {
-			searchBackend = ""
-		}
-		var embedder memory.EmbeddingProvider
-		if searchBackend == "hybrid" {
-			embedder = memory.NewHTTPEmbedder(memory.HTTPEmbedConfig{
-				BaseURL:    strings.TrimSpace(cfg.Embedding.BaseURL),
-				Model:      strings.TrimSpace(cfg.Embedding.Model),
-				APIKey:     os.Getenv(cfg.Embedding.APIKeyEnv),
-				Dimensions: cfg.Embedding.Dimensions,
-			})
-		}
-		generator, err := buildGenerator(cfg.Generation, stderr)
-		if err != nil {
-			fmt.Fprintln(stderr, "recollect:", err)
-			return rpc.Deps{}, err
-		}
-		return rpc.OpenBindingsWithGenerator(b, searchBackend, embedder, generator)
+		return openDeps(b, cfg, stderr)
 	}}
 	if err := rpc.Serve(os.Stdin, os.Stdout, deps); err != nil {
 		fmt.Fprintln(stderr, "recollect:", err)
 		return 1
 	}
 	return 0
+}
+
+func openDeps(b rpc.Bindings, cfg config.Config, stderr io.Writer) (rpc.Deps, error) {
+	searchBackend := cfg.Search.Backend
+	if searchBackend == "lexical" {
+		searchBackend = ""
+	}
+	var embedder memory.EmbeddingProvider
+	if searchBackend == "hybrid" {
+		embedder = memory.NewHTTPEmbedder(memory.HTTPEmbedConfig{
+			BaseURL:    strings.TrimSpace(cfg.Embedding.BaseURL),
+			Model:      strings.TrimSpace(cfg.Embedding.Model),
+			APIKey:     os.Getenv(cfg.Embedding.APIKeyEnv),
+			Dimensions: cfg.Embedding.Dimensions,
+		})
+	}
+	generator, err := buildGenerator(cfg.Generation, stderr)
+	if err != nil {
+		return rpc.Deps{}, err
+	}
+	return rpc.OpenBindingsWithGenerator(b, searchBackend, embedder, generator)
 }

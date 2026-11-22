@@ -14,6 +14,8 @@ import (
 
 	"github.com/dkmnx/recollect/internal/bindings"
 	"github.com/dkmnx/recollect/internal/config"
+	"github.com/dkmnx/recollect/internal/mcp"
+	"github.com/dkmnx/recollect/internal/rpc"
 	"github.com/dkmnx/recollect/memory"
 )
 
@@ -246,6 +248,48 @@ func runResolve(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runMCP(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	project := fs.String("project", "", "project directory (default: current directory)")
+	harness := fs.String("harness", "mcp", "harness identifier")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "usage: recollect mcp [--project DIR] [--harness NAME]")
+		return 2
+	}
+	resolved, err := bindings.Resolve(*project, "")
+	if err != nil {
+		fmt.Fprintln(stderr, "recollect:", err)
+		return 1
+	}
+	cfg, err := config.LoadUserDir(resolved.UserDir)
+	if err != nil {
+		fmt.Fprintln(stderr, "recollect:", err)
+		return 1
+	}
+	deps, err := openDeps(rpc.Bindings{
+		ProjectDir:   resolved.ProjectDir,
+		ProjectRoot:  resolved.ProjectRoot,
+		UserDir:      resolved.UserDir,
+		HarnessID:    *harness,
+		Capabilities: []string{"generation", "events", "context"},
+		Protocol:     rpc.Protocol{Major: 1},
+	}, cfg, stderr)
+	if err != nil {
+		fmt.Fprintln(stderr, "recollect:", err)
+		return 1
+	}
+	defer deps.Store.Close()
+	if err := mcp.Serve(os.Stdin, stdout, deps, resolved.ProjectRoot, *harness, buildVersion()); err != nil {
+		fmt.Fprintln(stderr, "recollect:", err)
+		return 1
+	}
+	return 0
+}
+
 func runDoctor(args []string, out, stderr io.Writer) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -321,7 +365,12 @@ Commands:
   version              print the engine version
   doctor               run an in-process engine probe
   resolve              print the canonical project and user roots
+  mcp                  serve the Model Context Protocol on stdin and stdout
   setup opencode       print or write the OpenCode plugin entry
+
+MCP flags:
+  --project DIR        project directory (default: current directory)
+  --harness NAME       harness identifier (default: mcp)
 
 Doctor flags:
   --user-dir DIR       read config.json from DIR (default: host default)
