@@ -72,7 +72,7 @@ After the adapter is published, use the npm package:
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "opencode-recollect@0.1.0",
+      "package": "opencode-recollect@0.1.1",
       "options": {
         "binaryPath": "/home/you/.local/bin/recollect",
         "userDir": "/home/you/.recollect",
@@ -92,12 +92,12 @@ background at server startup, so you do not run `npm install`. The CLI can add
 the package to the global config and install it in one step:
 
 ```sh
-opencode plugin add opencode-recollect@0.1.0
+opencode plugin add opencode-recollect@0.1.1
 opencode plugin check
 ```
 
 Exact versions stay pinned. `opencode plugin update` moves an unpinned package,
-and `opencode plugin remove opencode-recollect@0.1.0` removes it.
+and `opencode plugin remove opencode-recollect@0.1.1` removes it.
 
 ### From a checkout
 
