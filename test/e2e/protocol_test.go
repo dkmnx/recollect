@@ -155,6 +155,7 @@ func TestProtocolTranscript(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read golden: %v (run with UPDATE_GOLDEN=1)", err)
 	}
+	want = []byte(strings.ReplaceAll(string(want), "\r\n", "\n"))
 	if string(want) != string(got) {
 		t.Fatalf("protocol transcript changed; run with UPDATE_GOLDEN=1 and review the diff\n%s", got)
 	}
