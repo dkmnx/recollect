@@ -18,10 +18,11 @@ events for durable memory.
 ### From a release
 
 Download the archive for your platform from GitHub Releases and verify it
-against `checksums.txt`, or run the repository install script.
+against `checksums.txt`, or run the repository install script. Replace `X.Y.Z`
+with the version you want, and keep the `v` in commands that take a tag.
 
 ```sh
-tar -xzf recollect_0.1.0_linux_amd64.tar.gz
+tar -xzf recollect_X.Y.Z_linux_amd64.tar.gz
 install -m 755 recollect ~/.local/bin/recollect
 recollect version
 ```
@@ -37,7 +38,7 @@ The download-and-inspect form is:
 ```sh
 curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh -o install.sh
 less install.sh
-sh install.sh --version v0.1.0
+sh install.sh --version vX.Y.Z
 ```
 
 ### With go install

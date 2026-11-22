@@ -24,8 +24,9 @@ Replace these before you run a command.
   [CONTRIBUTING.md](CONTRIBUTING.md).
 - Run the checks in [CONTRIBUTING.md](CONTRIBUTING.md).
 - Update the changelog for the part you release.
-- Leave the install examples in `README.md` unchanged. They use `@latest` or a
-  `vX.Y.Z` placeholder and do not need a version bump.
+- Leave the install examples in `README.md` and `adapters/opencode/README.md`
+  unchanged. They use `@latest` or a `vX.Y.Z` placeholder and do not need a
+  version bump.
 
 ## Engine release
 
@@ -66,7 +67,8 @@ Replace these before you run a command.
 The adapter publishes to npm. Its version is in
 `adapters/opencode/package.json`. This flow also needs `npm`, `bun`, and the
 `opencode` CLI. When the minimum engine version changes, record it in the
-adapter changelog.
+adapter changelog and in the Requirements section of
+`adapters/opencode/README.md`.
 
 1. Add a `## [vA.B.C] - YYYY-MM-DD` section to
    `adapters/opencode/CHANGELOG.md`.
