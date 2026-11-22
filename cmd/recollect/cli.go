@@ -12,6 +12,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"github.com/dkmnx/recollect/internal/bindings"
 	"github.com/dkmnx/recollect/memory"
 )
 
@@ -91,16 +92,7 @@ func isDir(path string) bool {
 }
 
 func defaultUserDir() string {
-	if runtime.GOOS == "windows" {
-		if local := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); local != "" {
-			return filepath.Join(local, "recollect")
-		}
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".recollect"
-	}
-	return filepath.Join(home, ".recollect")
+	return bindings.DefaultUserDir(runtime.GOOS, os.LookupEnv)
 }
 
 func openCodeConfigDir() (string, error) {
@@ -222,6 +214,37 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+func runResolve(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("resolve", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	root := fs.String("root", "", "project directory to resolve (default: current directory)")
+	asJSON := fs.Bool("json", false, "print the result as JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "usage: recollect resolve [--root DIR] [--json]")
+		return 2
+	}
+	resolved, err := bindings.Resolve(*root, "")
+	if err != nil {
+		fmt.Fprintln(stderr, "recollect:", err)
+		return 1
+	}
+	if *asJSON {
+		raw, err := json.MarshalIndent(resolved, "", "  ")
+		if err != nil {
+			fmt.Fprintln(stderr, "recollect:", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, string(raw))
+		return 0
+	}
+	fmt.Fprintf(stdout, "projectRoot: %s\nprojectDir: %s\nuserDir: %s\n",
+		resolved.ProjectRoot, resolved.ProjectDir, resolved.UserDir)
+	return 0
+}
+
 func runDoctor(out io.Writer) error {
 	root, err := os.MkdirTemp("", "recollect-doctor-")
 	if err != nil {
@@ -266,7 +289,12 @@ With no command, recollect serves the JSON-RPC engine on stdin and stdout.
 Commands:
   version              print the engine version
   doctor               run an in-process engine probe
+  resolve              print the canonical project and user roots
   setup opencode       print or write the OpenCode plugin entry
+
+Resolve flags:
+  --root DIR           project directory to resolve (default: current directory)
+  --json               print the result as JSON
 
 Setup flags:
   --write              merge into the global OpenCode config
