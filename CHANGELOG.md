@@ -5,6 +5,18 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.1.2] - 2026-11-22
+
+### Changed
+
+- macOS arm64 builds are now checked in CI.
+
+### Fixed
+
+- The HTTP embeddings client now has a 30s timeout and rejects responses larger
+  than 16 MiB, so a stalled or oversized endpoint cannot hang or exhaust memory
+  during hybrid search.
+
 ## [v0.1.1] - 2026-11-22
 
 ### Changed
@@ -56,3 +68,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 [v0.1.0]: https://github.com/dkmnx/recollect/compare/9ddfd25cb1f64ff34c071785c27100c5caa5ae71...v0.1.0
 [v0.1.1]: https://github.com/dkmnx/recollect/compare/v0.1.0...v0.1.1
+[v0.1.2]: https://github.com/dkmnx/recollect/compare/v0.1.1...v0.1.2
