@@ -136,6 +136,39 @@ func TestLoadRejectsRelativeBaseURL(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsHybridWithoutEmbedding(t *testing.T) {
+	clearEnv(t)
+	if _, err := config.Load(writeConfig(t, `{"search":{"backend":"hybrid"}}`)); err == nil {
+		t.Fatal("hybrid without embedding.baseURL accepted")
+	}
+	if _, err := config.Load(writeConfig(t, `{"search":{"backend":"hybrid"},"embedding":{"baseURL":"http://example/v1"}}`)); err == nil {
+		t.Fatal("hybrid without model or dimensions accepted")
+	}
+	if _, err := config.Load(writeConfig(t, `{"search":{"backend":"hybrid"},"embedding":{"baseURL":"http://example/v1","model":"m","dimensions":3}}`)); err != nil {
+		t.Fatalf("valid hybrid rejected: %v", err)
+	}
+}
+
+func TestLexicalOverrideRecoversHybridFile(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("RECOLLECT_SEARCH_INDEX", "lexical")
+	cfg, err := config.Load(writeConfig(t, `{"search":{"backend":"hybrid"}}`))
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Search.Backend != "lexical" {
+		t.Fatalf("backend = %q, want lexical", cfg.Search.Backend)
+	}
+}
+
+func TestEnvHybridRequiresEmbedding(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("RECOLLECT_SEARCH_INDEX", "hybrid")
+	if _, err := config.Load(filepath.Join(t.TempDir(), "missing.json")); err == nil {
+		t.Fatal("env hybrid without embedding accepted")
+	}
+}
+
 func TestLoadRejectsHTTPModeWithoutEndpoint(t *testing.T) {
 	clearEnv(t)
 	if _, err := config.Load(writeConfig(t, `{"generation":{"mode":"http"}}`)); err == nil {
@@ -148,6 +181,7 @@ func TestEnvOverrides(t *testing.T) {
 	t.Setenv("RECOLLECT_GENERATION", "off")
 	path := writeConfig(t, `{
 		"search": {"backend": "sqlite"},
+		"embedding": {"baseURL": "http://example/v1", "model": "m", "dimensions": 3},
 		"generation": {"mode": "command", "command": ["claude"], "timeoutSeconds": 30}
 	}`)
 	cfg, err := config.Load(path)

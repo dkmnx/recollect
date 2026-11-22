@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/dkmnx/recollect/internal/config"
 	"github.com/dkmnx/recollect/internal/memory"
@@ -44,6 +45,7 @@ func serve(stderr io.Writer) int {
 	deps := rpc.Deps{Open: func(b rpc.Bindings) (rpc.Deps, error) {
 		cfg, err := config.LoadUserDir(b.UserDir)
 		if err != nil {
+			fmt.Fprintln(stderr, "recollect:", err)
 			return rpc.Deps{}, err
 		}
 		searchBackend := cfg.Search.Backend
@@ -52,10 +54,16 @@ func serve(stderr io.Writer) int {
 		}
 		var embedder memory.EmbeddingProvider
 		if searchBackend == "hybrid" {
-			embedder = memory.NewDeterministicEmbedder(256)
+			embedder = memory.NewHTTPEmbedder(memory.HTTPEmbedConfig{
+				BaseURL:    strings.TrimSpace(cfg.Embedding.BaseURL),
+				Model:      strings.TrimSpace(cfg.Embedding.Model),
+				APIKey:     os.Getenv(cfg.Embedding.APIKeyEnv),
+				Dimensions: cfg.Embedding.Dimensions,
+			})
 		}
 		generator, err := buildGenerator(cfg.Generation, stderr)
 		if err != nil {
+			fmt.Fprintln(stderr, "recollect:", err)
 			return rpc.Deps{}, err
 		}
 		return rpc.OpenBindingsWithGenerator(b, searchBackend, embedder, generator)

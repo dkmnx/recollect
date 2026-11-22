@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -100,6 +101,23 @@ func (idx *searchIndex) init() error {
 	if idx.embedder == nil {
 		return nil
 	}
+	identity := embeddingIdentity(idx.embedder)
+	var stored int64
+	readErr := idx.db.QueryRow(`SELECT value FROM search_meta WHERE key = 'embedding'`).Scan(&stored)
+	if readErr != nil && !errors.Is(readErr, sql.ErrNoRows) {
+		return readErr
+	}
+	rebuild := errors.Is(readErr, sql.ErrNoRows) || (readErr == nil && stored != identity)
+	if rebuild {
+		for _, statement := range []string{
+			`DROP TABLE IF EXISTS search_vec`,
+			`DROP TABLE IF EXISTS search_vec_meta`,
+		} {
+			if _, err := idx.db.Exec(statement); err != nil {
+				return err
+			}
+		}
+	}
 	vectorStatements := []string{
 		`CREATE VIRTUAL TABLE IF NOT EXISTS search_vec USING vec0(embedding float[` +
 			strconv.Itoa(idx.embedder.Dimensions()) + `] distance_metric=cosine)`,
@@ -113,7 +131,24 @@ func (idx *searchIndex) init() error {
 			return err
 		}
 	}
+	if rebuild {
+		if _, err := idx.db.Exec(`INSERT INTO search_meta(key, value) VALUES ('embedding', ?)
+			ON CONFLICT(key) DO UPDATE SET value = excluded.value`, identity); err != nil {
+			return err
+		}
+		if _, err := idx.db.Exec(`UPDATE search_meta SET value = value + 1 WHERE key = 'generation'`); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+// embeddingIdentity changes when the model name or vector width changes, so a
+// derived index built by another provider is discarded instead of queried.
+func embeddingIdentity(embedder EmbeddingProvider) int64 {
+	h := fnv.New64a()
+	fmt.Fprintf(h, "%s\x00%d", embedder.Name(), embedder.Dimensions())
+	return int64(h.Sum64())
 }
 
 func (idx *searchIndex) generation() (int64, error) {

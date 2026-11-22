@@ -88,6 +88,12 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	if err := validate(cfg); err != nil {
+		return Config{}, fmt.Errorf("config: %w", err)
+	}
+	if err := validateEffective(cfg); err != nil {
+		return Config{}, fmt.Errorf("config: %w", err)
+	}
 	return cfg, nil
 }
 
@@ -145,7 +151,26 @@ func validate(cfg Config) error {
 	if err := validateBaseURL("embedding.baseURL", cfg.Embedding.BaseURL); err != nil {
 		return err
 	}
-	return validateBaseURL("generation.http.baseURL", cfg.Generation.HTTP.BaseURL)
+	if err := validateBaseURL("generation.http.baseURL", cfg.Generation.HTTP.BaseURL); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateEffective checks requirements that depend on the backend selected
+// after environment overrides. A lexical or sqlite override may recover a file
+// that selected hybrid without an endpoint.
+func validateEffective(cfg Config) error {
+	if cfg.Search.Backend != "hybrid" {
+		return nil
+	}
+	if strings.TrimSpace(cfg.Embedding.BaseURL) == "" {
+		return errors.New("hybrid search requires embedding.baseURL")
+	}
+	if strings.TrimSpace(cfg.Embedding.Model) == "" || cfg.Embedding.Dimensions <= 0 {
+		return errors.New("hybrid search requires embedding.model and a positive embedding.dimensions")
+	}
+	return nil
 }
 
 func validateAPIKeyEnv(field, name string) error {

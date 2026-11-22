@@ -7,8 +7,64 @@ package e2e
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
+
+	"github.com/dkmnx/recollect/internal/memory"
 )
+
+func startEmbedServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	embedder := memory.NewDeterministicEmbedder(256)
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model string   `json:"model"`
+			Input []string `json:"input"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if r.URL.Path != "/embeddings" {
+			t.Errorf("embeddings path = %q", r.URL.Path)
+		}
+		if body.Model != "test" {
+			t.Errorf("embeddings model = %q", body.Model)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("authorization = %q", got)
+		}
+		vectors, err := embedder.Embed(r.Context(), body.Input)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		data := make([]map[string]any, len(vectors))
+		for i, vector := range vectors {
+			data[i] = map[string]any{"embedding": vector}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": data})
+	}))
+}
+
+func writeHybridConfig(t *testing.T, userDir, baseURL string) {
+	t.Helper()
+	if err := os.MkdirAll(userDir, 0o700); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	raw := fmt.Sprintf(
+		`{"search":{"backend":"hybrid"},"embedding":{"baseURL":%q,"model":"test","dimensions":256,"apiKeyEnv":"EMBED_KEY"}}`,
+		baseURL,
+	)
+	if err := os.WriteFile(filepath.Join(userDir, "config.json"), []byte(raw), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+}
 
 type semanticMatch struct {
 	Name        string `json:"name"`
@@ -33,7 +89,11 @@ func semanticSearch(t *testing.T, c *client, query string) []semanticMatch {
 
 func TestHybridSearchAddsLabeledSemanticHits(t *testing.T) {
 	t.Setenv("RECOLLECT_SEARCH_INDEX", "hybrid")
+	t.Setenv("EMBED_KEY", "test-key")
+	server := startEmbedServer(t)
+	defer server.Close()
 	d := tempDirs(t)
+	writeHybridConfig(t, d.user, server.URL)
 	c := start(t)
 	defer c.cmd.Process.Kill()
 	initialize(t, c, d, "hybrid-harness", map[string]int{"major": 1})
@@ -63,7 +123,11 @@ func TestHybridSearchAddsLabeledSemanticHits(t *testing.T) {
 
 func TestHybridSearchKeepsLexicalWhenVectorsUnavailable(t *testing.T) {
 	t.Setenv("RECOLLECT_SEARCH_INDEX", "hybrid")
+	t.Setenv("EMBED_KEY", "test-key")
+	server := startEmbedServer(t)
+	defer server.Close()
 	d := tempDirs(t)
+	writeHybridConfig(t, d.user, server.URL)
 	c := start(t)
 	defer c.cmd.Process.Kill()
 	initialize(t, c, d, "hybrid-harness", map[string]int{"major": 1})
@@ -74,5 +138,22 @@ func TestHybridSearchKeepsLexicalWhenVectorsUnavailable(t *testing.T) {
 	}
 	if matches := semanticSearch(t, c, "unrelated-han-查询"); len(matches) != 0 {
 		t.Fatalf("unrelated query produced hits: %+v", matches)
+	}
+}
+
+func TestHybridWithoutEndpointFailsInitialize(t *testing.T) {
+	t.Setenv("RECOLLECT_SEARCH_INDEX", "hybrid")
+	d := tempDirs(t)
+	c := start(t)
+	defer c.cmd.Process.Kill()
+	resp := c.call(t, "initialize", initParams{
+		ProjectDir: d.project, UserDir: d.user, HarnessID: "refuse",
+		Capabilities: []string{"memory"}, Protocol: map[string]int{"major": 1},
+	})
+	if resp.Error == nil || resp.Error.Code != -32006 {
+		t.Fatalf("initialize = %+v, want storage failure", resp.Error)
+	}
+	if !strings.Contains(c.stderr.String(), "hybrid search requires embedding.baseURL") {
+		t.Fatalf("stderr = %q", c.stderr.String())
 	}
 }
