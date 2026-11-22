@@ -124,11 +124,25 @@ func TestRunResolve(t *testing.T) {
 }
 
 func TestRunDoctor(t *testing.T) {
-	var out strings.Builder
-	if err := runDoctor(&out); err != nil {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	var out, errOut strings.Builder
+	if code := runDoctor(nil, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "engine ok") || !strings.Contains(out.String(), "search.backend: lexical") {
+		t.Fatalf("doctor = %q", out.String())
+	}
+
+	custom := t.TempDir()
+	if err := os.WriteFile(filepath.Join(custom, "config.json"), []byte(`{"search":{"backend":"sqlite"}}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "engine ok") {
-		t.Fatalf("doctor = %q", out.String())
+	var customOut, customErr strings.Builder
+	if code := runDoctor([]string{"--user-dir", custom}, &customOut, &customErr); code != 0 {
+		t.Fatalf("custom exit = %d, stderr = %q", code, customErr.String())
+	}
+	if !strings.Contains(customOut.String(), "search.backend: sqlite") {
+		t.Fatalf("custom doctor = %q", customOut.String())
 	}
 }

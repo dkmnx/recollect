@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/dkmnx/recollect/internal/bindings"
+	"github.com/dkmnx/recollect/internal/config"
 	"github.com/dkmnx/recollect/memory"
 )
 
@@ -245,21 +246,47 @@ func runResolve(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runDoctor(out io.Writer) error {
+func runDoctor(args []string, out, stderr io.Writer) int {
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	userDir := fs.String("user-dir", "", "user dir holding config.json (default: host default)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "usage: recollect doctor [--user-dir DIR]")
+		return 2
+	}
+	dir := strings.TrimSpace(*userDir)
+	if dir == "" {
+		dir = defaultUserDir()
+	}
+	if err := doctor(dir, out); err != nil {
+		fmt.Fprintln(stderr, "recollect:", err)
+		return 1
+	}
+	return 0
+}
+
+func doctor(userDir string, out io.Writer) error {
+	cfg, err := config.LoadUserDir(userDir)
+	if err != nil {
+		return err
+	}
 	root, err := os.MkdirTemp("", "recollect-doctor-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(root)
 	projectDir := filepath.Join(root, "project")
-	userDir := filepath.Join(root, "user")
-	for _, dir := range []string{projectDir, userDir} {
+	probeUser := filepath.Join(root, "user")
+	for _, dir := range []string{projectDir, probeUser} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
 	}
 	meta := memory.ProjectMetaFor(projectDir)
-	store := memory.NewStore(memory.Options{ProjectDir: projectDir, UserDir: userDir, Meta: meta})
+	store := memory.NewStore(memory.Options{ProjectDir: projectDir, UserDir: probeUser, Meta: meta})
 	defer store.Close()
 	if _, err := store.EnsureProject(meta); err != nil {
 		return err
@@ -278,6 +305,10 @@ func runDoctor(out io.Writer) error {
 		return errors.New("search returned no probe fact")
 	}
 	fmt.Fprintf(out, "engine ok\nversion: %s\n", buildVersion())
+	fmt.Fprintf(out, "config: %s\n", filepath.Join(userDir, "config.json"))
+	for _, line := range cfg.Summary(os.Getenv) {
+		fmt.Fprintf(out, "  %s\n", line)
+	}
 	return nil
 }
 
@@ -291,6 +322,9 @@ Commands:
   doctor               run an in-process engine probe
   resolve              print the canonical project and user roots
   setup opencode       print or write the OpenCode plugin entry
+
+Doctor flags:
+  --user-dir DIR       read config.json from DIR (default: host default)
 
 Resolve flags:
   --root DIR           project directory to resolve (default: current directory)
