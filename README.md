@@ -198,7 +198,13 @@ Search is lexical by default. Set `RECOLLECT_SEARCH_INDEX` to choose the
 derived index:
 
 - `sqlite` uses the private SQLite FTS5 index under `.engine/search`.
-- `hybrid` adds semantic candidates from the built-in deterministic embedder.
+- `hybrid` adds semantic candidates from the OpenAI-compatible endpoint in
+  `config.json`. Set `embedding.baseURL`, `embedding.model`,
+  `embedding.dimensions`, and `embedding.apiKeyEnv`. `hybrid` refuses to start
+  without an endpoint.
+
+The config file lives at `<userDir>/config.json`. Run `recollect doctor` to
+print the effective values with secret values hidden.
 
 Markdown stays authoritative. The index rebuilds from the files and never
 replaces them.

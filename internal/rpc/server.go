@@ -67,6 +67,12 @@ func OpenBindings(b Bindings) (Deps, error) {
 
 // The search backend is process configuration, not a client-controlled binding.
 func OpenBindingsWithSearch(b Bindings, searchBackend string, embedder memory.EmbeddingProvider) (Deps, error) {
+	return OpenBindingsWithGenerator(b, searchBackend, embedder, nil)
+}
+
+// OpenBindingsWithGenerator constructs bound dependencies with a host
+// generator. A nil generator reports generation as unavailable.
+func OpenBindingsWithGenerator(b Bindings, searchBackend string, embedder memory.EmbeddingProvider, generator jobs.Generator) (Deps, error) {
 	projectRoot := b.ProjectRoot
 	if strings.TrimSpace(projectRoot) == "" {
 		projectRoot = b.ProjectDir
@@ -91,8 +97,10 @@ func OpenBindingsWithSearch(b Bindings, searchBackend string, embedder memory.Em
 		ProjectDir: projectDir,
 		UserDir:    userDir,
 	})
-	queue := jobs.Open(store, filepath.Join(projectDir, ".engine"),
-		func(context.Context, string) (string, error) { return "", jobs.ErrGenerationMissing })
+	if generator == nil {
+		generator = func(context.Context, string) (string, error) { return "", jobs.ErrGenerationMissing }
+	}
+	queue := jobs.Open(store, filepath.Join(projectDir, ".engine"), generator)
 	queue.SetHarness(b.HarnessID)
 	return Deps{Store: store, Engine: eng, Jobs: queue, Render: render.MemorySection}, nil
 }

@@ -27,6 +27,20 @@ describe("computeUserRoot", () => {
   test("uses a literal ~ home when HOME is missing on POSIX", () => {
     expect(computeUserRoot("linux", {})).toBe("~/.recollect");
   });
+
+  test("falls back to the default Windows home when both are absent", () => {
+    expect(computeUserRoot("win32", {})).toBe("C:\\Users\\default\\AppData\\Local\\recollect");
+  });
+
+  test("treats a present empty HOME as an empty base", () => {
+    expect(computeUserRoot("linux", { HOME: "" })).toBe(".recollect");
+  });
+
+  test("preserves a UNC local app data root", () => {
+    expect(computeUserRoot("win32", { LOCALAPPDATA: "\\\\server\\share\\appdata" })).toBe(
+      "\\\\server\\share\\appdata\\recollect",
+    );
+  });
 });
 
 describe("resolveConfig", () => {
@@ -49,6 +63,15 @@ describe("resolveConfig", () => {
     expect(config.projectDir).not.toBe("C:\\work\\demo");
     expect(config.userDir).toBe("C:\\AppData\\Local\\recollect");
     expect(config.workspaceID).toBe("ws-1");
+  });
+
+  test("projects the canonical root to the same ID as the Go resolver", () => {
+    const config = resolveConfig(
+      { binaryPath: "/opt/recollect", userDir: "/srv/memory" },
+      { project: { canonical: "/work/demo" } },
+      { platform: "linux", env: { HOME: "/home/u" } },
+    );
+    expect(config.projectDir).toBe("/srv/memory/projects/111b1182b4b056ca");
   });
 
   test("lets an explicit userDir override the default", () => {

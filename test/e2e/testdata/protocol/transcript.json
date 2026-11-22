@@ -1,0 +1,188 @@
+[
+  {
+    "method": "initialize",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "result": {
+        "jsonrpcVersion": "2.0",
+        "protocol": {
+          "major": 1,
+          "minor": 1
+        },
+        "projectDir": "\u003cproject\u003e",
+        "userDir": "\u003cuser\u003e",
+        "harnessID": "protocol",
+        "capabilities": [
+          "events",
+          "context"
+        ],
+        "generationState": "disabled",
+        "note": "minor version difference reported"
+      }
+    }
+  },
+  {
+    "method": "memory.execute",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "result": {
+        "target": "project",
+        "operation": "append",
+        "name": "protocol-fact",
+        "requestID": "protocol-append",
+        "revision": "\u003crevision-1\u003e"
+      }
+    }
+  },
+  {
+    "method": "memory.execute",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "result": {
+        "target": "project",
+        "operation": "read",
+        "name": "protocol-fact",
+        "revision": "\u003crevision-1\u003e",
+        "content": "---\nname: protocol-fact\ndescription: Protocol fact\ncapturedOn: \u003cdate\u003e\nmetadata:\n  type: project\n  node_type: memory\n---\n\nThe protocol transcript is stable.\n",
+        "fact": {
+          "name": "protocol-fact",
+          "description": "Protocol fact",
+          "body": "The protocol transcript is stable."
+        }
+      }
+    }
+  },
+  {
+    "method": "memory.execute",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "result": {
+        "target": "project",
+        "operation": "search",
+        "matches": [
+          {
+            "name": "protocol-fact",
+            "description": "Protocol fact",
+            "body": "The protocol transcript is stable.",
+            "field": "name"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "method": "memory.execute",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 5,
+      "error": {
+        "code": -32002,
+        "message": "read_required"
+      }
+    }
+  },
+  {
+    "method": "memory.execute",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 6,
+      "result": {
+        "target": "project",
+        "operation": "correct",
+        "name": "protocol-fact",
+        "requestID": "protocol-correct",
+        "revision": "\u003crevision-2\u003e"
+      }
+    }
+  },
+  {
+    "method": "memory.execute",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 7,
+      "error": {
+        "code": -32003,
+        "message": "revision_conflict"
+      }
+    }
+  },
+  {
+    "method": "memory.execute",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 8,
+      "error": {
+        "code": -32002,
+        "message": "read_required"
+      }
+    }
+  },
+  {
+    "method": "status.get",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 9,
+      "result": {
+        "health": "ok",
+        "pending": 0,
+        "conflicts": 0,
+        "generationState": "disabled",
+        "jobStates": {
+          "applied": 0,
+          "cancelled": 0,
+          "conflict": 0,
+          "leased": 0,
+          "pending": 0,
+          "retry_wait": 0
+        },
+        "privacyBlocked": 0,
+        "facts": 1,
+        "userBytes": 0,
+        "digests": 0,
+        "pagesNeedRefresh": [
+          "component-map",
+          "core-concepts",
+          "conventions",
+          "key-decisions",
+          "pitfalls"
+        ],
+        "limits": {
+          "projectSoftBytes": 16384,
+          "userInjectBytes": 4096,
+          "pagesInjectBytes": 10240,
+          "maxSearchResults": 50,
+          "maxDigests": 20,
+          "digestTTLDays": 30
+        },
+        "lastErrorCode": "read_required"
+      }
+    }
+  },
+  {
+    "method": "no.such.method",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 10,
+      "error": {
+        "code": -32601,
+        "message": "unknown method: no.such.method"
+      }
+    }
+  },
+  {
+    "method": "engine.close",
+    "response": {
+      "jsonrpc": "2.0",
+      "id": 11,
+      "result": {
+        "count": 0,
+        "deadlineMS": 5000,
+        "pending": []
+      }
+    }
+  }
+]

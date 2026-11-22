@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dkmnx/recollect/internal/bindings"
 )
 
 func TestVersionText(t *testing.T) {
@@ -92,12 +94,55 @@ func TestWriteOpenCodeConfigRefusesJSONC(t *testing.T) {
 	}
 }
 
-func TestRunDoctor(t *testing.T) {
-	var out strings.Builder
-	if err := runDoctor(&out); err != nil {
+func TestRunResolve(t *testing.T) {
+	dir := t.TempDir()
+	var out, errOut strings.Builder
+	if code := run([]string{"resolve", "--root", dir, "--json"}, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, errOut.String())
+	}
+	var got struct {
+		ProjectRoot string `json:"projectRoot"`
+		ProjectDir  string `json:"projectDir"`
+		UserDir     string `json:"userDir"`
+	}
+	if err := json.Unmarshal([]byte(out.String()), &got); err != nil {
+		t.Fatalf("decode: %v\n%s", err, out.String())
+	}
+	wantRoot, err := filepath.EvalSymlinks(dir)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out.String(), "engine ok") {
+	if got.ProjectRoot != wantRoot {
+		t.Fatalf("projectRoot = %q, want %q", got.ProjectRoot, wantRoot)
+	}
+	if wantDir := filepath.Join(got.UserDir, "projects", bindings.ProjectID(wantRoot)); got.ProjectDir != wantDir {
+		t.Fatalf("projectDir = %q, want %q", got.ProjectDir, wantDir)
+	}
+	if code := run([]string{"resolve", "extra"}, &out, &errOut); code != 2 {
+		t.Fatalf("positional arg exit = %d, want 2", code)
+	}
+}
+
+func TestRunDoctor(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("LOCALAPPDATA", t.TempDir())
+	var out, errOut strings.Builder
+	if code := runDoctor(nil, &out, &errOut); code != 0 {
+		t.Fatalf("exit = %d, stderr = %q", code, errOut.String())
+	}
+	if !strings.Contains(out.String(), "engine ok") || !strings.Contains(out.String(), "search.backend: lexical") {
 		t.Fatalf("doctor = %q", out.String())
+	}
+
+	custom := t.TempDir()
+	if err := os.WriteFile(filepath.Join(custom, "config.json"), []byte(`{"search":{"backend":"sqlite"}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var customOut, customErr strings.Builder
+	if code := runDoctor([]string{"--user-dir", custom}, &customOut, &customErr); code != 0 {
+		t.Fatalf("custom exit = %d, stderr = %q", code, customErr.String())
+	}
+	if !strings.Contains(customOut.String(), "search.backend: sqlite") {
+		t.Fatalf("custom doctor = %q", customOut.String())
 	}
 }

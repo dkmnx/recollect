@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -11,7 +12,13 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strings"
+	"time"
 
+	"github.com/dkmnx/recollect/internal/bindings"
+	"github.com/dkmnx/recollect/internal/config"
+	"github.com/dkmnx/recollect/internal/jobs"
+	"github.com/dkmnx/recollect/internal/mcp"
+	"github.com/dkmnx/recollect/internal/rpc"
 	"github.com/dkmnx/recollect/memory"
 )
 
@@ -91,16 +98,7 @@ func isDir(path string) bool {
 }
 
 func defaultUserDir() string {
-	if runtime.GOOS == "windows" {
-		if local := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); local != "" {
-			return filepath.Join(local, "recollect")
-		}
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ".recollect"
-	}
-	return filepath.Join(home, ".recollect")
+	return bindings.DefaultUserDir(runtime.GOOS, os.LookupEnv)
 }
 
 func openCodeConfigDir() (string, error) {
@@ -222,21 +220,153 @@ func runSetup(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func runDoctor(out io.Writer) error {
+func runResolve(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("resolve", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	root := fs.String("root", "", "project directory to resolve (default: current directory)")
+	asJSON := fs.Bool("json", false, "print the result as JSON")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "usage: recollect resolve [--root DIR] [--json]")
+		return 2
+	}
+	resolved, err := bindings.Resolve(*root, "")
+	if err != nil {
+		fmt.Fprintln(stderr, "recollect:", err)
+		return 1
+	}
+	if *asJSON {
+		raw, err := json.MarshalIndent(resolved, "", "  ")
+		if err != nil {
+			fmt.Fprintln(stderr, "recollect:", err)
+			return 1
+		}
+		fmt.Fprintln(stdout, string(raw))
+		return 0
+	}
+	fmt.Fprintf(stdout, "projectRoot: %s\nprojectDir: %s\nuserDir: %s\n",
+		resolved.ProjectRoot, resolved.ProjectDir, resolved.UserDir)
+	return 0
+}
+
+func runMCP(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("mcp", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	project := fs.String("project", "", "project directory (default: current directory)")
+	harness := fs.String("harness", "mcp", "harness identifier")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "usage: recollect mcp [--project DIR] [--harness NAME]")
+		return 2
+	}
+	opts := mcp.Options{
+		ProjectHint:  *project,
+		ProjectFixed: strings.TrimSpace(*project) != "",
+		Harness:      *harness,
+		Version:      buildVersion(),
+		Open: func(dir string) (mcp.Opened, error) {
+			resolved, err := bindings.Resolve(dir, "")
+			if err != nil {
+				return mcp.Opened{}, err
+			}
+			cfg, err := config.LoadUserDir(resolved.UserDir)
+			if err != nil {
+				return mcp.Opened{}, err
+			}
+			deps, err := openDeps(rpc.Bindings{
+				ProjectDir:   resolved.ProjectDir,
+				ProjectRoot:  resolved.ProjectRoot,
+				UserDir:      resolved.UserDir,
+				HarnessID:    *harness,
+				Capabilities: []string{"generation", "events", "context"},
+				Protocol:     rpc.Protocol{Major: 1},
+			}, cfg, stderr)
+			if err != nil {
+				return mcp.Opened{}, err
+			}
+			generator, err := buildGenerator(cfg.Generation, stderr)
+			if err != nil {
+				deps.Store.Close()
+				return mcp.Opened{}, err
+			}
+			if configured := time.Duration(cfg.Generation.TimeoutSeconds) * time.Second; configured > jobs.MaxGenerationTimeout {
+				fmt.Fprintf(stderr, "recollect: generation timeout capped at %s to stay within the job lease\n", jobs.MaxGenerationTimeout)
+			}
+			return mcp.Opened{
+				Deps: deps, Root: resolved.ProjectRoot, Generate: generator,
+				Timeout: time.Duration(cfg.Generation.TimeoutSeconds) * time.Second,
+			}, nil
+		},
+		Start: func(opened mcp.Opened) func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			runner := &jobs.Runner{
+				Queue: opened.Deps.Jobs, Harness: *harness, Generation: opened.Generate != nil,
+				Timeout: opened.Timeout, Generate: opened.Generate,
+				Log: func(err error) { fmt.Fprintln(stderr, "recollect:", err) },
+			}
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				runner.Run(ctx)
+			}()
+			return func() {
+				cancel()
+				<-done
+			}
+		},
+	}
+	if err := mcp.Serve(os.Stdin, stdout, opts); err != nil {
+		fmt.Fprintln(stderr, "recollect:", err)
+		return 1
+	}
+	return 0
+}
+
+func runDoctor(args []string, out, stderr io.Writer) int {
+	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	userDir := fs.String("user-dir", "", "user dir holding config.json (default: host default)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 0 {
+		fmt.Fprintln(stderr, "usage: recollect doctor [--user-dir DIR]")
+		return 2
+	}
+	dir := strings.TrimSpace(*userDir)
+	if dir == "" {
+		dir = defaultUserDir()
+	}
+	if err := doctor(dir, out); err != nil {
+		fmt.Fprintln(stderr, "recollect:", err)
+		return 1
+	}
+	return 0
+}
+
+func doctor(userDir string, out io.Writer) error {
+	cfg, err := config.LoadUserDir(userDir)
+	if err != nil {
+		return err
+	}
 	root, err := os.MkdirTemp("", "recollect-doctor-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(root)
 	projectDir := filepath.Join(root, "project")
-	userDir := filepath.Join(root, "user")
-	for _, dir := range []string{projectDir, userDir} {
+	probeUser := filepath.Join(root, "user")
+	for _, dir := range []string{projectDir, probeUser} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return err
 		}
 	}
 	meta := memory.ProjectMetaFor(projectDir)
-	store := memory.NewStore(memory.Options{ProjectDir: projectDir, UserDir: userDir, Meta: meta})
+	store := memory.NewStore(memory.Options{ProjectDir: projectDir, UserDir: probeUser, Meta: meta})
 	defer store.Close()
 	if _, err := store.EnsureProject(meta); err != nil {
 		return err
@@ -255,6 +385,10 @@ func runDoctor(out io.Writer) error {
 		return errors.New("search returned no probe fact")
 	}
 	fmt.Fprintf(out, "engine ok\nversion: %s\n", buildVersion())
+	fmt.Fprintf(out, "config: %s\n", filepath.Join(userDir, "config.json"))
+	for _, line := range cfg.Summary(os.Getenv) {
+		fmt.Fprintf(out, "  %s\n", line)
+	}
 	return nil
 }
 
@@ -266,7 +400,20 @@ With no command, recollect serves the JSON-RPC engine on stdin and stdout.
 Commands:
   version              print the engine version
   doctor               run an in-process engine probe
+  resolve              print the canonical project and user roots
+  mcp                  serve the Model Context Protocol on stdin and stdout
   setup opencode       print or write the OpenCode plugin entry
+
+MCP flags:
+  --project DIR        project directory (default: current directory)
+  --harness NAME       harness identifier (default: mcp)
+
+Doctor flags:
+  --user-dir DIR       read config.json from DIR (default: host default)
+
+Resolve flags:
+  --root DIR           project directory to resolve (default: current directory)
+  --json               print the result as JSON
 
 Setup flags:
   --write              merge into the global OpenCode config

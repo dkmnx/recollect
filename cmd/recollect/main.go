@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
+	"github.com/dkmnx/recollect/internal/config"
 	"github.com/dkmnx/recollect/internal/memory"
 	"github.com/dkmnx/recollect/internal/rpc"
 )
@@ -24,11 +26,11 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, versionText(buildVersion(), commit, date))
 		return 0
 	case "doctor":
-		if err := runDoctor(stdout); err != nil {
-			fmt.Fprintln(stderr, "recollect:", err)
-			return 1
-		}
-		return 0
+		return runDoctor(args[1:], stdout, stderr)
+	case "resolve":
+		return runResolve(args[1:], stdout, stderr)
+	case "mcp":
+		return runMCP(args[1:], stdout, stderr)
 	case "setup":
 		return runSetup(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
@@ -42,20 +44,38 @@ func run(args []string, stdout, stderr io.Writer) int {
 }
 
 func serve(stderr io.Writer) int {
-	searchBackend := os.Getenv("RECOLLECT_SEARCH_INDEX")
-	if searchBackend != "sqlite" && searchBackend != "hybrid" {
-		searchBackend = ""
-	}
-	var embedder memory.EmbeddingProvider
-	if searchBackend == "hybrid" {
-		embedder = memory.NewDeterministicEmbedder(256)
-	}
 	deps := rpc.Deps{Open: func(b rpc.Bindings) (rpc.Deps, error) {
-		return rpc.OpenBindingsWithSearch(b, searchBackend, embedder)
+		cfg, err := config.LoadUserDir(b.UserDir)
+		if err != nil {
+			fmt.Fprintln(stderr, "recollect:", err)
+			return rpc.Deps{}, err
+		}
+		return openDeps(b, cfg, stderr)
 	}}
 	if err := rpc.Serve(os.Stdin, os.Stdout, deps); err != nil {
 		fmt.Fprintln(stderr, "recollect:", err)
 		return 1
 	}
 	return 0
+}
+
+func openDeps(b rpc.Bindings, cfg config.Config, stderr io.Writer) (rpc.Deps, error) {
+	searchBackend := cfg.Search.Backend
+	if searchBackend == "lexical" {
+		searchBackend = ""
+	}
+	var embedder memory.EmbeddingProvider
+	if searchBackend == "hybrid" {
+		embedder = memory.NewHTTPEmbedder(memory.HTTPEmbedConfig{
+			BaseURL:    strings.TrimSpace(cfg.Embedding.BaseURL),
+			Model:      strings.TrimSpace(cfg.Embedding.Model),
+			APIKey:     os.Getenv(cfg.Embedding.APIKeyEnv),
+			Dimensions: cfg.Embedding.Dimensions,
+		})
+	}
+	generator, err := buildGenerator(cfg.Generation, stderr)
+	if err != nil {
+		return rpc.Deps{}, err
+	}
+	return rpc.OpenBindingsWithGenerator(b, searchBackend, embedder, generator)
 }
