@@ -8,7 +8,6 @@ package rpc
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -252,7 +251,7 @@ func TestLastErrorCodeCarriesTheLastErrorMessage(t *testing.T) {
 	if err := json.Unmarshal(replies[2].Result, &status); err != nil {
 		t.Fatalf("decode status: %v", err)
 	}
-	if want := fmt.Sprintf("unknown method: no.such.method"); status.LastErrorCode != want {
+	if want := "unknown method: no.such.method"; status.LastErrorCode != want {
 		t.Fatalf("lastErrorCode = %q, want %q", status.LastErrorCode, want)
 	}
 }
