@@ -5,6 +5,29 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v0.2.0] - 2026-11-22
+
+### Added
+
+- `recollect mcp` serves the Model Context Protocol over stdio with memory
+  search, read, save, correct, delete, and context tools, plus resources.
+- `recollect resolve` prints the canonical project root, project directory, and
+  user directory.
+- A JSON config file at `<userDir>/config.json` sets the search backend, the
+  embedding endpoint, and the generation mode. Environment variables override
+  it.
+- Command and HTTP generators let the engine capture memory when a harness
+  cannot supply a model.
+- `docs/protocol.md` documents the stdio protocol, with a golden transcript
+  test.
+
+### Changed
+
+- Hybrid search now uses the configured HTTP embeddings endpoint. The derived
+  vector index rebuilds when the model or vector width changes.
+- `recollect doctor` prints the effective config, hides secret values, and
+  accepts `--user-dir`.
+
 ## [v0.1.2] - 2026-11-22
 
 ### Changed
@@ -69,3 +92,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 [v0.1.0]: https://github.com/dkmnx/recollect/compare/9ddfd25cb1f64ff34c071785c27100c5caa5ae71...v0.1.0
 [v0.1.1]: https://github.com/dkmnx/recollect/compare/v0.1.0...v0.1.1
 [v0.1.2]: https://github.com/dkmnx/recollect/compare/v0.1.1...v0.1.2
+[v0.2.0]: https://github.com/dkmnx/recollect/compare/v0.1.2...v0.2.0
