@@ -119,6 +119,30 @@ func TestLoadRejectsInvalidBackend(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsCommandModeWithoutCommand(t *testing.T) {
+	clearEnv(t)
+	if _, err := config.Load(writeConfig(t, `{"generation":{"mode":"command"}}`)); err == nil {
+		t.Fatal("command mode without a command accepted")
+	}
+	if _, err := config.Load(writeConfig(t, `{"generation":{"mode":"command","command":["  "]}}`)); err == nil {
+		t.Fatal("blank executable accepted")
+	}
+}
+
+func TestLoadRejectsRelativeBaseURL(t *testing.T) {
+	clearEnv(t)
+	if _, err := config.Load(writeConfig(t, `{"embedding":{"baseURL":"localhost:11434"}}`)); err == nil {
+		t.Fatal("relative base URL accepted")
+	}
+}
+
+func TestLoadRejectsHTTPModeWithoutEndpoint(t *testing.T) {
+	clearEnv(t)
+	if _, err := config.Load(writeConfig(t, `{"generation":{"mode":"http"}}`)); err == nil {
+		t.Fatal("http mode without an endpoint accepted")
+	}
+}
+
 func TestEnvOverrides(t *testing.T) {
 	t.Setenv("RECOLLECT_SEARCH_INDEX", "hybrid")
 	t.Setenv("RECOLLECT_GENERATION", "off")

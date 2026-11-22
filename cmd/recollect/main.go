@@ -54,7 +54,11 @@ func serve(stderr io.Writer) int {
 		if searchBackend == "hybrid" {
 			embedder = memory.NewDeterministicEmbedder(256)
 		}
-		return rpc.OpenBindingsWithSearch(b, searchBackend, embedder)
+		generator, err := buildGenerator(cfg.Generation, stderr)
+		if err != nil {
+			return rpc.Deps{}, err
+		}
+		return rpc.OpenBindingsWithGenerator(b, searchBackend, embedder, generator)
 	}}
 	if err := rpc.Serve(os.Stdin, os.Stdout, deps); err != nil {
 		fmt.Fprintln(stderr, "recollect:", err)

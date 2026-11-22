@@ -118,7 +118,15 @@ func validate(cfg Config) error {
 		return fmt.Errorf("search.backend must be lexical, sqlite, or hybrid, got %q", cfg.Search.Backend)
 	}
 	switch cfg.Generation.Mode {
-	case "off", "command", "http":
+	case "off":
+	case "command":
+		if len(cfg.Generation.Command) == 0 || strings.TrimSpace(cfg.Generation.Command[0]) == "" {
+			return errors.New("generation.command[0] must name an executable when generation.mode is command")
+		}
+	case "http":
+		if strings.TrimSpace(cfg.Generation.HTTP.BaseURL) == "" || strings.TrimSpace(cfg.Generation.HTTP.Model) == "" {
+			return errors.New("generation.http.baseURL and generation.http.model are required when generation.mode is http")
+		}
 	default:
 		return fmt.Errorf("generation.mode must be off, command, or http, got %q", cfg.Generation.Mode)
 	}
@@ -157,6 +165,12 @@ func validateBaseURL(field, raw string) error {
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		return fmt.Errorf("%s is not a valid URL", field)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return fmt.Errorf("%s must use http or https", field)
+	}
+	if parsed.Host == "" {
+		return fmt.Errorf("%s must include a host", field)
 	}
 	if parsed.User != nil {
 		return fmt.Errorf("%s must not contain credentials; name a key with apiKeyEnv", field)
