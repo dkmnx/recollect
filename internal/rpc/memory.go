@@ -28,6 +28,7 @@ type factView struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Body        string `json:"body"`
+	Field       string `json:"field,omitempty"`
 	Kind        string `json:"kind,omitempty"`
 }
 
@@ -116,7 +117,7 @@ func (s *server) executeSearch(req Request, p executeParams, scope engine.Scope)
 	for _, match := range matches {
 		out.Matches = append(out.Matches, factView{
 			Name: filterModelText(match.Name), Description: filterModelText(match.Description),
-			Body: filterModelText(match.Field), Kind: match.Kind,
+			Body: filterModelText(match.Body), Field: match.Field, Kind: match.Kind,
 		})
 	}
 	return s.reply(req.ID, out, nil)

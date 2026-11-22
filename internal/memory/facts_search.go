@@ -14,11 +14,13 @@ import (
 // FactMatch is one fact search hit. Channel is "project" for a root fact
 // and "topic" for a fact inside a topic directory. Scene is the fact's
 // domain tag; empty means unscoped. Score is the ranking score; only order
-// is contractual, the number is advisory.
+// is contractual, the number is advisory. Body holds the fact body for
+// lexical hits; semantic hits leave it empty.
 type FactMatch struct {
 	Channel     string  `json:"channel"`
 	Name        string  `json:"name"`
 	Description string  `json:"description"`
+	Body        string  `json:"body,omitempty"`
 	Path        string  `json:"path"`
 	Field       string  `json:"field"`
 	Scene       string  `json:"scene,omitempty"`
@@ -77,6 +79,7 @@ func (s *Store) SearchFacts(query, scene string, max int) ([]FactMatch, error) {
 			Channel:     channel,
 			Name:        hit.fact.Name,
 			Description: hit.fact.Description,
+			Body:        hit.fact.Body,
 			Path:        filepath.Join(s.projectDir, filepath.FromSlash(rel)),
 			Field:       hit.field,
 			Scene:       hit.fact.Scene,
