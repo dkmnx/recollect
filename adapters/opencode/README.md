@@ -42,8 +42,6 @@ sh install.sh --version v0.1.0
 
 ### With go install
 
-After the module is published:
-
 ```sh
 go install github.com/dkmnx/recollect/cmd/recollect@latest
 recollect version
@@ -65,7 +63,7 @@ finds it automatically; an explicit path is only needed for a custom install.
 
 ### Published package
 
-After the adapter is published, use the npm package:
+Use the published npm package:
 
 ```jsonc
 {
@@ -87,9 +85,9 @@ Pin the version. `opencode-recollect@latest` also works, but a later release
 can change under you. The `binaryPath` option is optional when the engine is
 on `PATH` or in the default install directory.
 
-Once the package is published, OpenCode installs a missing package in the
-background at server startup, so you do not run `npm install`. The CLI can add
-the package to the global config and install it in one step:
+OpenCode installs a missing package in the background at server startup, so
+you do not run `npm install`. The CLI can add the package to the global config
+and install it in one step:
 
 ```sh
 opencode plugin add opencode-recollect@0.1.1

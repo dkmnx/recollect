@@ -8,6 +8,8 @@ the release workflow. An adapter tag does not.
 - Confirm `main` is green in CI.
 - Run the checks in [CONTRIBUTING.md](CONTRIBUTING.md).
 - Update the changelog for the part you release.
+- Leave the install examples in `README.md` unchanged. They use `@latest` or a
+  `vX.Y.Z` placeholder and do not need a version bump.
 
 ## Engine release
 

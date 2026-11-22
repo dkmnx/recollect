@@ -1,7 +1,7 @@
 # Recollect context
 
 Recollect is a standalone Go memory engine. The canonical module path is
-`github.com/dkmnx/recollect`, not published yet. Go 1.27.4,
+`github.com/dkmnx/recollect`. Go 1.27.4,
 `golang.org/x/sys` v0.49.0, `ncruces/go-sqlite3`, and
 `luist18/sqlite-vec-go` are the declared dependencies.
 
@@ -27,7 +27,8 @@ Recollect is a standalone Go memory engine. The canonical module path is
   `C:\msys64\clang64\bin` and `CGO_ENABLED=1` before `go test -race ./...`.
 - Run `go run ./tools/checktestaudit` before any change with tests.
 - Follow `RELEASING.md` for engine and adapter releases. On a version bump,
-  update every package version reference across the documents.
+  update concrete version references, but leave the `@latest` and `vX.Y.Z`
+  install placeholders in the docs.
 - Cross-builds use `GOOS=linux GOARCH=amd64` and `GOOS=windows GOARCH=amd64`
   with `CGO_ENABLED=0`.
 - Native Linux verification uses Fedora WSL2 with Go at

@@ -46,7 +46,7 @@ Features:
 | ----------------------------------------------------------------------------- | ----------- | ------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | [`github.com/dkmnx/recollect`](https://pkg.go.dev/github.com/dkmnx/recollect) | Go module   | `go get github.com/dkmnx/recollect@latest`                   | Engine library for facts, search, transactions, jobs, and prompt rendering.         |
 | [`recollect`](https://github.com/dkmnx/recollect/releases)                    | Go binary   | `go install github.com/dkmnx/recollect/cmd/recollect@latest` | JSON-RPC stdio engine with `version`, `doctor`, and `setup opencode`.               |
-| [`opencode-recollect`](https://www.npmjs.com/package/opencode-recollect)      | npm package | `opencode plugin add opencode-recollect@0.1.1`               | OpenCode plugin with the `memory` tool, `/recollect-*` commands, and event capture. |
+| [`opencode-recollect`](https://www.npmjs.com/package/opencode-recollect)      | npm package | `opencode plugin add opencode-recollect@latest`              | OpenCode plugin with the `memory` tool, `/recollect-*` commands, and event capture. |
 
 ## Requirements
 
@@ -62,7 +62,7 @@ cd recollect
 go build -o recollect ./cmd/recollect
 ```
 
-After the module is published, install it with:
+Install it with:
 
 ```sh
 go install github.com/dkmnx/recollect/cmd/recollect@latest
@@ -74,10 +74,10 @@ go install github.com/dkmnx/recollect/cmd/recollect@latest
 curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh | sh
 ```
 
-Pin a release:
+Pin a release by replacing `vX.Y.Z` with the tag you want:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh | sh -s -- --version v0.1.0
+curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh | sh -s -- --version vX.Y.Z
 ```
 
 On Windows PowerShell:
@@ -89,7 +89,7 @@ irm https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.ps1 |
 Pin a Windows release:
 
 ```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.ps1))) -Version v0.1.0
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.ps1))) -Version vX.Y.Z
 ```
 
 This runs the script without inspection. Use the download-and-inspect form
@@ -100,7 +100,7 @@ below when you need to review it first.
 ```sh
 curl -fsSL https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.sh -o install.sh
 less install.sh
-sh install.sh --version v0.1.0
+sh install.sh --version vX.Y.Z
 ```
 
 On Windows:
@@ -108,7 +108,7 @@ On Windows:
 ```powershell
 irm https://raw.githubusercontent.com/dkmnx/recollect/main/scripts/install.ps1 -OutFile install.ps1
 notepad install.ps1
-.\install.ps1 -Version v0.1.0
+.\install.ps1 -Version vX.Y.Z
 ```
 
 The scripts install to `~/.local/bin` or
