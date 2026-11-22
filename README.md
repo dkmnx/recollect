@@ -24,8 +24,8 @@ builds derived pages from cited sources.
 The packages are written in Go. They depend on the standard library,
 `golang.org/x/sys`, `ncruces/go-sqlite3`, and `luist18/sqlite-vec-go`.
 Platform-specific code covers atomic file replacement, advisory locks, and the
-Windows search cache ACL. The engine is designed to be cross platform. Linux
-and Windows builds are checked. macOS is not verified.
+Windows search cache ACL. The engine is designed to be cross platform. Linux,
+macOS arm64, and Windows builds are checked.
 
 Markdown stays the authoritative store, so a person can read and edit the
 files without the engine.
