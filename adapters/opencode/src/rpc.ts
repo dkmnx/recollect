@@ -15,6 +15,9 @@ export const ErrorCode = {
   Transport: -32007,
 } as const;
 
+export const RPC_DEADLINE_MS = 5000;
+const MAX_RECONNECT_ATTEMPTS = 3;
+
 export class RpcError extends Error {
   constructor(
     readonly code: number,
@@ -24,6 +27,10 @@ export class RpcError extends Error {
     super(message);
     this.name = "RpcError";
   }
+}
+
+function isTransportError(error: unknown): boolean {
+  return error instanceof RpcError && error.code === ErrorCode.Transport;
 }
 
 export interface Carrier {
@@ -42,21 +49,57 @@ export class RpcClient {
   private readonly pending = new Map<number, Pending>();
   private readonly unsubscribes: Array<() => void> = [];
   private failure: Error | null = null;
+  private readonly factory: (() => Carrier) | null;
+  private carrier: Carrier;
+  private initParams: unknown = null;
+  private initialized = false;
+  private initializing: Promise<any> | null = null;
+  private generation = 0;
+  private disposed = false;
+  private reconnecting: Promise<void> | null = null;
+  private reconnectAttempts = 0;
+  private unrecoverable = false;
   lastDiagnostic = "";
 
-  constructor(private readonly carrier: Carrier) {
-    this.unsubscribes.push(carrier.onFrame((line) => this.handleFrame(line)));
+  constructor(carrierOrFactory: Carrier | (() => Carrier)) {
+    if (typeof carrierOrFactory === "function") {
+      this.factory = carrierOrFactory;
+      this.carrier = carrierOrFactory();
+    } else {
+      this.factory = null;
+      this.carrier = carrierOrFactory;
+    }
+    this.attach();
+  }
+
+  private attach(): void {
+    const generation = ++this.generation;
+    const current = () => this.generation === generation;
+    const carrier = this.carrier;
+    this.unsubscribes.push(carrier.onFrame((line) => {
+      if (current()) this.handleFrame(line);
+    }));
     if (carrier.onDiagnostic) {
       this.unsubscribes.push(carrier.onDiagnostic((line) => {
-        this.lastDiagnostic = line.trim();
+        if (current()) this.lastDiagnostic = line.trim();
       }));
     }
     if (carrier.onError) {
-      this.unsubscribes.push(carrier.onError((error) => this.failAll(error)));
+      this.unsubscribes.push(carrier.onError((error) => {
+        if (current()) this.failAll(error);
+      }));
     }
     if (carrier.onExit) {
-      this.unsubscribes.push(carrier.onExit((error) => this.failAll(error)));
+      this.unsubscribes.push(carrier.onExit((error) => {
+        if (current()) this.failAll(error);
+      }));
     }
+  }
+
+  private detach(): void {
+    this.generation++;
+    for (const off of this.unsubscribes) off();
+    this.unsubscribes.length = 0;
   }
 
   private handleFrame(line: string): void {
@@ -81,43 +124,182 @@ export class RpcClient {
   }
 
   private failAll(error: Error): void {
-    this.failure = error;
-    for (const waiting of this.pending.values()) waiting.reject(error);
+    if (!this.failure) this.failure = error;
+    for (const waiting of this.pending.values()) waiting.reject(this.failure);
     this.pending.clear();
   }
 
-  isDead(): boolean {
-    return this.failure !== null;
+  private latchUnrecoverable(error: Error): void {
+    this.unrecoverable = true;
+    this.failAll(error);
   }
 
-  request(method: string, params: unknown = {}): Promise<any> {
-    if (this.failure) return Promise.reject(this.failure);
+  private withDeadline<T>(promise: Promise<T>, operation: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const error = new RpcError(ErrorCode.Transport, `${operation} timed out`);
+        this.failAll(error);
+        reject(error);
+      }, RPC_DEADLINE_MS);
+      promise.then(
+        (value) => { clearTimeout(timer); resolve(value); },
+        (cause) => { clearTimeout(timer); reject(cause); },
+      );
+    });
+  }
 
+  private dispatch(method: string, params: unknown): Promise<any> {
+    if (this.disposed) {
+      return Promise.reject(this.failure ?? new RpcError(ErrorCode.InvalidRequest, "client disposed"));
+    }
+    if (this.failure) return Promise.reject(this.failure);
     const id = this.nextID++;
     const frame = JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n";
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
       try {
         this.carrier.send(frame);
-      } catch (error) {
+      } catch (cause) {
         this.pending.delete(id);
-        reject(error instanceof Error ? error : new Error(String(error)));
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        this.failAll(error);
+        reject(error);
       }
     });
   }
 
-  initialize(params: unknown): Promise<any> { return this.request("initialize", params); }
+  private async performReconnect(factory: () => Carrier): Promise<void> {
+    this.failAll(this.failure ?? new RpcError(ErrorCode.Transport, "engine reconnecting"));
+    this.detach();
+    this.carrier.dispose();
+    this.lastDiagnostic = "";
+    this.carrier = factory();
+    this.failure = null;
+    this.attach();
+    try {
+      if (this.failure) throw this.failure;
+      if (this.initialized) {
+        await this.withDeadline(this.dispatch("initialize", this.initParams), "initialize replay");
+      }
+    } catch (cause) {
+      this.detach();
+      this.carrier.dispose();
+      throw cause;
+    }
+  }
+
+  private reconnect(): Promise<void> {
+    if (this.disposed) {
+      return Promise.reject(this.failure ?? new RpcError(ErrorCode.InvalidRequest, "client disposed"));
+    }
+    if (this.unrecoverable) {
+      return Promise.reject(this.failure ?? new RpcError(ErrorCode.Transport, "engine transport failed"));
+    }
+    if (this.reconnecting) return this.reconnecting;
+    const factory = this.factory;
+    if (!factory) {
+      const error = this.failure ?? new RpcError(ErrorCode.Transport, "engine transport failed");
+      this.latchUnrecoverable(error);
+      return Promise.reject(error);
+    }
+    if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+      const error = this.failure ?? new RpcError(ErrorCode.Transport, "engine transport failed");
+      this.latchUnrecoverable(error);
+      return Promise.reject(error);
+    }
+    this.reconnectAttempts++;
+    let attempt: Promise<void>;
+    attempt = this.performReconnect(factory).then(
+      () => undefined,
+      (cause) => {
+        const error = cause instanceof Error ? cause : new Error(String(cause));
+        this.failAll(error);
+        if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) this.latchUnrecoverable(error);
+        throw error;
+      },
+    ).finally(() => {
+      if (this.reconnecting === attempt) this.reconnecting = null;
+    });
+    this.reconnecting = attempt;
+    return attempt;
+  }
+
+  isDead(): boolean {
+    return this.disposed || this.unrecoverable || (this.factory === null && this.failure !== null);
+  }
+
+  async request(method: string, params: unknown = {}): Promise<any> {
+    if (this.disposed) {
+      return Promise.reject(this.failure ?? new RpcError(ErrorCode.InvalidRequest, "client disposed"));
+    }
+    if (this.failure || this.reconnecting) await this.reconnect();
+    let result: any;
+    try {
+      result = await this.dispatch(method, params);
+    } catch (cause) {
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      if (!this.disposed && this.factory && isTransportError(error)) {
+        await this.reconnect();
+        result = await this.withDeadline(this.dispatch(method, params), `${method} retry`);
+      } else {
+        throw error;
+      }
+    }
+    // shortcut: budget counts consecutive failures; a flapping engine may respawn once per successful request.
+    // Upgrade to a time-window cap if flapping is observed in the field.
+    this.reconnectAttempts = 0;
+    return result;
+  }
+
+  initialize(params: unknown): Promise<any> {
+    if (this.initialized) {
+      return Promise.reject(new RpcError(ErrorCode.InvalidRequest, "already initialized"));
+    }
+    if (this.initializing) return this.initializing;
+    this.initParams = params;
+    this.initializing = this.request("initialize", params)
+      .then((result) => {
+        this.initialized = true;
+        return result;
+      })
+      .finally(() => {
+        this.initializing = null;
+      });
+    return this.initializing;
+  }
   memoryExecute(params: unknown): Promise<any> { return this.request("memory.execute", params); }
   contextGet(params: unknown): Promise<any> { return this.request("context.get", params); }
   eventsIngest(params: unknown): Promise<any> { return this.request("events.ingest", params); }
   jobsNext(params: unknown): Promise<any> { return this.request("jobs.next", params); }
   jobsComplete(params: unknown): Promise<any> { return this.request("jobs.complete", params); }
   statusGet(params: unknown = {}): Promise<any> { return this.request("status.get", params); }
-  engineClose(params: unknown = {}): Promise<any> { return this.request("engine.close", params); }
+
+  async engineClose(params: unknown = {}): Promise<any> {
+    if (this.disposed) return { skipped: "disposed" };
+    if (this.failure) {
+      if (isTransportError(this.failure)) return { skipped: "transport" };
+      throw this.failure;
+    }
+    if (this.unrecoverable) return { skipped: "transport" };
+    if (this.reconnecting) await this.reconnecting.catch(() => undefined);
+    if (this.disposed) return { skipped: "disposed" };
+    if (this.failure) {
+      if (isTransportError(this.failure)) return { skipped: "transport" };
+      throw this.failure;
+    }
+    if (this.unrecoverable) return { skipped: "transport" };
+    try {
+      return await this.withDeadline(this.dispatch("engine.close", params), "engine.close");
+    } catch (cause) {
+      if (isTransportError(cause)) return { skipped: "transport" };
+      throw cause;
+    }
+  }
 
   dispose(): void {
-    for (const off of this.unsubscribes) off();
-    this.unsubscribes.length = 0;
+    if (this.disposed) return;
+    this.disposed = true;
+    this.detach();
     this.failAll(new RpcError(ErrorCode.InvalidRequest, "client disposed"));
     this.carrier.dispose();
   }
@@ -204,5 +386,5 @@ export function spawnCarrier(binaryPath: string): Carrier {
 }
 
 export function createRpcClient(binaryPath: string): RpcClient {
-  return new RpcClient(spawnCarrier(binaryPath));
+  return new RpcClient(() => spawnCarrier(binaryPath));
 }
