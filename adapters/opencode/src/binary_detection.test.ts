@@ -1,7 +1,8 @@
 // audit: behavior - the adapter resolves the engine from explicit config, env, PATH, or the default install directory.
 // audit: regression - an omitted binaryPath failed even when recollect was installed on PATH.
 // audit: coverage gap - existing config tests always passed an explicit binaryPath.
-// audit: seam - resolveConfig with injected host platform and environment.
+// audit: regression - A Windows drive letter was split as a Linux PATH separator.
+// audit: seam - resolveConfig with an injected host platform and environment that match the temp path.
 
 import { describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
@@ -42,11 +43,15 @@ describe("binary detection", () => {
 
   test("finds recollect on PATH", () => {
     const dir = mkdtempSync(join(tmpdir(), "rc-path-"));
-    const binary = makeExecutable(dir);
+    const windows = process.platform === "win32";
+    const binaryName = windows ? "recollect.exe" : "recollect";
+    const binary = makeExecutable(dir, binaryName);
     const config = resolveConfig(
       {},
       location,
-      { platform: "linux", env: { HOME: "/home/u", PATH: dir } },
+      windows
+        ? { platform: "win32", env: { PATH: dir, PATHEXT: ".exe" } }
+        : { platform: "linux", env: { HOME: "/home/u", PATH: dir } },
     );
     expect(config.binaryPath).toBe(binary);
   });
