@@ -23,17 +23,18 @@ Recollect is a standalone Go memory engine. The canonical module path is
 ## Commands
 
 - Run `go test ./...` and `go vet ./...` from the repository root.
-- Race checks need a 64-bit C compiler. On this host set `PATH` to include
-  `C:\msys64\clang64\bin` and `CGO_ENABLED=1` before `go test -race ./...`.
+- Race checks need a 64-bit C compiler. On Windows, add the compiler's `bin`
+  directory to `PATH` and set `CGO_ENABLED=1` before `go test -race ./...`.
 - Run `go run ./tools/checktestaudit` before any change with tests.
 - Follow `RELEASING.md` for engine and adapter releases. On a version bump,
   update concrete version references, but leave the `@latest` and `vX.Y.Z`
   install placeholders in the docs.
 - Cross-builds use `GOOS=linux GOARCH=amd64` and `GOOS=windows GOARCH=amd64`
   with `CGO_ENABLED=0`.
-- Native Linux verification uses Fedora WSL2 with Go at
-  `/home/swengr/go-install/go/bin/go`. Run both `go test ./... -count=1` and
-  `go test -race ./... -count=1` there before claiming Linux behavior.
+- Native Linux verification runs on any Linux environment. Install Go 1.27.x
+  and a 64-bit C compiler for race checks. Use `go` from `PATH`. Do not assume
+  a distro or Go install path. Run `go test ./... -count=1` and
+  `go test -race ./... -count=1` before claiming Linux behavior.
 
 ## Code style
 
