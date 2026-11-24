@@ -1,6 +1,6 @@
 {
   "name": "opencode-recollect",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "type": "module",
   "description": "OpenCode adapter for the Recollect memory engine",
   "license": "MIT",
