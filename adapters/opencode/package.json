@@ -1,12 +1,12 @@
 {
   "name": "opencode-recollect",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "OpenCode adapter for the Recollect memory engine",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dkmnx/recollect.git",
+    "url": "git+https://github.com/dkmnx/recollect.git",
     "directory": "adapters/opencode"
   },
   "homepage": "https://github.com/dkmnx/recollect/tree/main/adapters/opencode",
