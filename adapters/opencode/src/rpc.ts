@@ -124,7 +124,7 @@ export class RpcClient {
 }
 
 export function spawnCarrier(binaryPath: string): Carrier {
-  const child = spawn(binaryPath, [], { stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(binaryPath, [], { stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   const frameListeners = new Set<(line: string) => void>();
   const diagListeners = new Set<(line: string) => void>();
   const errorListeners = new Set<(error: Error) => void>();

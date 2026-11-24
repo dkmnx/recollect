@@ -5,6 +5,13 @@ All notable changes to `opencode-recollect` are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Hide the engine console window on Windows so each Recollect engine child does
+  not open a separate console.
+
 ## [v0.1.2] - 2026-11-24
 
 ### Fixed
