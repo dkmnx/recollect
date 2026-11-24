@@ -215,6 +215,8 @@ bun test
   `go install` sits outside the repository.
 - **Engine fails to start.** Run `binaryPath` directly. A missing execute bit,
   a wrong architecture, or a stale build fails the same way in OpenCode.
+- **No engine console on Windows.** The engine runs in the background. This is
+  expected. Use `/recollect-status` to check health.
 - **Wrong version.** Run `recollect version` and reinstall or rebuild the
   binary the config names.
 - **No memory tool.** Confirm the plugin entry is under `plugins`, not
