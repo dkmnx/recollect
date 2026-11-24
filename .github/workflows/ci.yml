@@ -97,6 +97,23 @@ jobs:
       - name: Run adapter tests
         run: bun test
 
+  adapter-windows:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: adapters/opencode
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install adapter dependencies
+        run: bun install --frozen-lockfile
+      # shortcut: typecheck covers the changed modules; widen when the adapter is type-clean.
+      - name: Typecheck changed adapter modules
+        run: bun run typecheck
+      - name: Run adapter tests
+        run: bun test
+
   release-config:
     runs-on: ubuntu-latest
     timeout-minutes: 10
