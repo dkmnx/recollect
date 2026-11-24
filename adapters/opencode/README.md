@@ -71,7 +71,7 @@ Use the published npm package:
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "opencode-recollect@0.1.1",
+      "package": "opencode-recollect@0.1.2",
       "options": {
         "binaryPath": "/home/you/.local/bin/recollect",
         "userDir": "/home/you/.recollect",
@@ -91,12 +91,12 @@ you do not run `npm install`. The CLI can add the package to the global config
 and install it in one step:
 
 ```sh
-opencode plugin add opencode-recollect@0.1.1
+opencode plugin add opencode-recollect@0.1.2
 opencode plugin check
 ```
 
 Exact versions stay pinned. `opencode plugin update` moves an unpinned package,
-and `opencode plugin remove opencode-recollect@0.1.1` removes it.
+and `opencode plugin remove opencode-recollect@0.1.2` removes it.
 
 ### From a checkout
 
