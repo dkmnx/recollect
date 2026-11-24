@@ -40,6 +40,14 @@ jobs:
         run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...
       - name: Run test audit check
         run: go run ./tools/checktestaudit
+      - name: Check install placeholders
+        run: |
+          test -f README.md
+          test -f adapters/opencode/README.md
+          if grep -En 'opencode-recollect@v?[0-9]' README.md adapters/opencode/README.md; then
+            echo 'Use opencode-recollect@latest in install examples.'
+            exit 1
+          fi
 
   go-windows:
     runs-on: windows-latest
