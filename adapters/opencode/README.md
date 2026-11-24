@@ -71,7 +71,7 @@ Use the published npm package:
   "$schema": "https://opencode.ai/config.json",
   "plugins": [
     {
-      "package": "opencode-recollect@0.1.2",
+      "package": "opencode-recollect@latest",
       "options": {
         "binaryPath": "/home/you/.local/bin/recollect",
         "userDir": "/home/you/.recollect",
@@ -82,21 +82,21 @@ Use the published npm package:
 }
 ```
 
-Pin the version. `opencode-recollect@latest` also works, but a later release
-can change under you. The `binaryPath` option is optional when the engine is
-on `PATH` or in the default install directory.
+Use `opencode-recollect@latest` to track the newest release. Replace `latest`
+with a pinned version for reproducible installs. The `binaryPath` option is
+optional when the engine is on `PATH` or in the default install directory.
 
 OpenCode installs a missing package in the background at server startup, so
 you do not run `npm install`. The CLI can add the package to the global config
 and install it in one step:
 
 ```sh
-opencode plugin add opencode-recollect@0.1.2
+opencode plugin add opencode-recollect@latest
 opencode plugin check
 ```
 
-Exact versions stay pinned. `opencode plugin update` moves an unpinned package,
-and `opencode plugin remove opencode-recollect@0.1.2` removes it.
+Pinned versions stay fixed. `opencode plugin update` moves an `@latest` entry,
+and `opencode plugin remove opencode-recollect@latest` removes the example entry.
 
 ### From a checkout
 
