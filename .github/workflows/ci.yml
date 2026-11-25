@@ -44,8 +44,13 @@ jobs:
         run: |
           test -f README.md
           test -f adapters/opencode/README.md
+          test -f adapters/dsh/README.md
           if grep -En 'opencode-recollect@v?[0-9]' README.md adapters/opencode/README.md; then
             echo 'Use opencode-recollect@latest in install examples.'
+            exit 1
+          fi
+          if grep -En 'dsh-recollect@v?[0-9]' README.md adapters/dsh/README.md; then
+            echo 'Use dsh-recollect@latest in install examples.'
             exit 1
           fi
 
@@ -138,6 +143,32 @@ jobs:
         run: bun run typecheck
       - name: Run adapter tests
         run: bun test
+
+  dsh-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build and install recollect
+        env:
+          GOBIN: ${{ runner.temp }}/bin
+        run: go install ./cmd/recollect
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run DSH adapter verifier
+        env:
+          RECOLLECT_BINARY: ${{ runner.temp }}/bin/recollect
+        run: node adapters/dsh/verify.mjs adapters/dsh
+      - name: Check DSH npm package contents
+        run: npm publish --dry-run --ignore-scripts
+        working-directory: adapters/dsh
 
   release-config:
     runs-on: ubuntu-latest

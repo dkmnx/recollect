@@ -17,7 +17,8 @@ Recollect is a standalone Go memory engine. The canonical module path is
   session cursors, and scope lock ordering. It wraps `memory.Store`.
 - The top-level `memory`, `engine`, `jobs`, `render`, and `imports` packages
   are the public facades. `cmd/recollect` serves the stdio protocol and setup
-  commands. `adapters/opencode` is the OpenCode plugin.
+  commands. `adapters/opencode` is the OpenCode plugin and `adapters/dsh` is the
+  DeepSeek Harness plugin.
 - `tools/checktestaudit` rejects test files without an audit record.
 
 ## Commands

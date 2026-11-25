@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Recollect workspace memory",
+    "description": "Remembers facts about each workspace between sessions. Use the recollect_memory tool to add, find, update, or remove facts; relevant facts are added to the assistant's context. Data stays on this machine and requires the Recollect binary."
+  }
+}
