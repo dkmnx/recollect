@@ -47,6 +47,7 @@ Features:
 | [`github.com/dkmnx/recollect`](https://pkg.go.dev/github.com/dkmnx/recollect) | Go module   | `go get github.com/dkmnx/recollect@latest`                   | Engine library for facts, search, transactions, jobs, and prompt rendering.         |
 | [`recollect`](https://github.com/dkmnx/recollect/releases)                    | Go binary   | `go install github.com/dkmnx/recollect/cmd/recollect@latest` | JSON-RPC stdio engine, MCP server, and setup commands.                              |
 | [`opencode-recollect`](https://www.npmjs.com/package/opencode-recollect)      | npm package | `opencode plugin add opencode-recollect@latest`              | OpenCode plugin with the `memory` tool, `/recollect-*` commands, and event capture. |
+| [`dsh-recollect`](https://www.npmjs.com/package/dsh-recollect)                | npm package | `dsh plugin --profile <name> add dsh-recollect@latest`        | DeepSeek Harness plugin with the `recollect_memory` tool and a scoped memory snapshot. |
 
 ## Requirements
 

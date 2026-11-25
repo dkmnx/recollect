@@ -49,7 +49,7 @@ Each agent starts its own `recollect` engine process bound to its workspace. Age
 From a checkout, run the E2E verifier with the bundled Node runtime:
 
 ```sh
-node verify.mjs adapters/dsh
+node adapters/dsh/verify.mjs adapters/dsh
 ```
 
-It checks the bundle manifest, patch row, locale, copied icon and license, the plugin's required services, store isolation, and a real JSON-RPC round trip through `recollect`. Live DSH activation is checked separately with `cordis_inspect` and a real `recollect_memory` call.
+It checks the bundle manifest, patch row, locale, copied icon and license, the plugin's required services, argument validation, revision surfacing, store isolation, and a real JSON-RPC round trip through `recollect`. Live DSH activation is checked separately with `cordis_inspect` and a real `recollect_memory` call.

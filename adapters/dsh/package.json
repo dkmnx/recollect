@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "description": "Per-workspace Recollect memory for DeepSeek Harness. Adds a scoped memory tool and injects a memory snapshot for each agent's working directory.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dkmnx/recollect.git",
+    "directory": "adapters/dsh"
+  },
+  "homepage": "https://github.com/dkmnx/recollect/tree/main/adapters/dsh",
+  "bugs": {
+    "url": "https://github.com/dkmnx/recollect/issues"
+  },
   "type": "module",
   "exports": {
     ".": "./index.js",
