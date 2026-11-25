@@ -19,3 +19,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   directory, with PATH as a fallback.
 - One engine process per agent, sharing a store through the engine's locks and
   receipts.
+
+[v0.1.0]: https://github.com/dkmnx/recollect/compare/9ddfd25cb1f64ff34c071785c27100c5caa5ae71...dsh-recollect-v0.1.0
