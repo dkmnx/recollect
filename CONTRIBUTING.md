@@ -48,13 +48,21 @@ GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...
 Race tests need `CGO_ENABLED=1` and a C compiler on `PATH`. On Windows, CI
 uses the MSYS2 MINGW64 toolchain.
 
-For adapter changes:
+For OpenCode adapter changes:
 
 ```sh
 cd adapters/opencode
 bun install --frozen-lockfile
 bun run typecheck
 bun test
+```
+
+For DSH adapter changes, run its E2E verifier from the repository root with a
+Node runtime. The verifier checks the bundle contract, store isolation, and a
+real engine JSON-RPC round trip.
+
+```sh
+node adapters/dsh/verify.mjs adapters/dsh
 ```
 
 ## Tests

@@ -1,7 +1,7 @@
 # Releasing Recollect
 
-The engine and the OpenCode adapter release independently. An engine tag starts
-the release workflow. An adapter tag does not.
+The engine, the OpenCode adapter, and the DSH adapter release independently. An
+engine tag starts the release workflow. An adapter tag does not.
 
 The two version numbers are independent. Engine `v0.1.1` and adapter `0.1.1`
 can exist at the same time. They are different tags for different products.
@@ -64,28 +64,35 @@ Replace these before you run a command.
 
 ## Adapter release
 
-The adapter publishes to npm. Its version is in
-`adapters/opencode/package.json`. This flow also needs `npm`, `bun`, and the
-`opencode` CLI. When the minimum engine version changes, record it in the
-adapter changelog and in the Requirements section of
-`adapters/opencode/README.md`.
+Each adapter publishes to npm independently. The OpenCode version is in
+`adapters/opencode/package.json`; the DSH version is in
+`adapters/dsh/package.json`. This flow also needs `npm`. OpenCode additionally
+needs `bun` and the `opencode` CLI. When the minimum engine version changes,
+record it in the adapter changelog and in the Requirements section of the
+adapter README.
 
-1. Add a `## [vA.B.C] - YYYY-MM-DD` section to
-   `adapters/opencode/CHANGELOG.md`.
+1. Add a `## [vA.B.C] - YYYY-MM-DD` section to that adapter's `CHANGELOG.md`.
 2. Bump the version without creating a tag.
 
    ```sh
-   cd adapters/opencode
+   cd adapters/opencode # or adapters/dsh
    npm version A.B.C --no-git-tag-version
    ```
 
    `--no-git-tag-version` stops npm from creating a local `vA.B.C` tag. Pushing
    that tag would start the engine release workflow.
-3. Verify the package.
+3. Verify the package. For OpenCode:
 
    ```sh
    bun test
    bun run typecheck
+   npm publish --dry-run
+   ```
+
+   For DSH:
+
+   ```sh
+   node verify.mjs .
    npm publish --dry-run
    ```
 
@@ -96,12 +103,15 @@ adapter changelog and in the Requirements section of
    npm publish --access public
    ```
 
-6. Tag the published commit.
+6. Tag the published commit. Use the matching adapter tag prefix.
 
    ```sh
    git push origin main
+   # OpenCode:
    git tag -a opencode-recollect-vA.B.C -m "opencode-recollect vA.B.C"
-   git push origin opencode-recollect-vA.B.C
+   # DSH:
+   git tag -a dsh-recollect-vA.B.C -m "dsh-recollect vA.B.C"
+   git push origin <adapter-tag>
    ```
 
 7. Verify the published version.
@@ -109,10 +119,13 @@ adapter changelog and in the Requirements section of
    ```sh
    npm view opencode-recollect version
    opencode plugin add opencode-recollect@A.B.C
+   npm view dsh-recollect version
+   # Desktop is Electron-managed; install there through the GUI.
+   dsh plugin --profile <other-profile> add dsh-recollect@A.B.C
    ```
 
-The adapter tag does not match the engine workflow pattern `v*`. It is a marker
-until an adapter workflow exists.
+Adapter tags do not match the engine workflow pattern `v*`. They are markers
+until adapter workflows exist.
 
 ## Releasing both
 
@@ -124,17 +137,19 @@ not have to match.
 git push origin main
 git tag -a vX.Y.Z -m "vX.Y.Z"
 git tag -a opencode-recollect-vA.B.C -m "opencode-recollect vA.B.C"
-git push origin vX.Y.Z opencode-recollect-vA.B.C
+git tag -a dsh-recollect-vA.B.C -m "dsh-recollect vA.B.C"
+git push origin vX.Y.Z opencode-recollect-vA.B.C dsh-recollect-vA.B.C
 ```
 
-The engine tag runs GoReleaser. Publish the adapter with npm as above.
+The engine tag runs GoReleaser. Publish each adapter with npm as above.
 
 ## Changelog links
 
 Keep the tag series separate.
 
 - Engine: compare the previous engine tag to the new engine tag.
-- Adapter: compare the previous adapter tag to the new adapter tag.
+- OpenCode adapter: compare `opencode-recollect-vA.B.C` tags.
+- DSH adapter: compare `dsh-recollect-vA.B.C` tags.
 - First release: use the initial commit
   `9ddfd25cb1f64ff34c071785c27100c5caa5ae71`.
 
