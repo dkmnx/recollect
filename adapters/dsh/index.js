@@ -247,7 +247,50 @@ async function startEngine(ctx, config, workspaceRoot, projectRoot, signal) {
   }
 }
 
-function toolDefinition(engine) {
+// The plugin tool is registered with DSH's plain ctx.tools.register, which
+// validates only output schemas. Model-facing parameters are guidance, so
+// reject arguments the engine would reject before spending an RPC round trip.
+// Keep these rules in sync with internal/rpc/memory.go and internal/engine/mutations.go.
+function validateArgs(args) {
+  const a = args && typeof args === 'object' && !Array.isArray(args) ? args : {};
+  if (a.target !== 'project' && a.target !== 'user') {
+    throw new Error('target must be project or user');
+  }
+  const user = a.target === 'user';
+  const blank = (key) => typeof a[key] !== 'string' || a[key].trim() === '';
+  const required = (key, message) => {
+    if (blank(key)) throw new Error(message);
+  };
+  switch (a.operation) {
+    case 'read':
+      if (!user) required('name', 'name is required for read');
+      break;
+    case 'search':
+      required('query', 'query is required for search');
+      break;
+    case 'append':
+      required('requestID', 'requestID is required for append');
+      if (user) required('reason', 'reason is required for append');
+      else required('description', 'description is required for append');
+      break;
+    case 'correct':
+      required('requestID', 'requestID is required for correct');
+      required('revision', 'revision is required for correct');
+      if (!user) required('name', 'name is required for correct');
+      break;
+    case 'delete':
+      required('requestID', 'requestID is required for delete');
+      required('revision', 'revision is required for delete');
+      if (!user) required('name', 'name is required for delete');
+      break;
+    default:
+      throw new Error('unsupported operation');
+  }
+  return a;
+}
+
+// Exported so the verifier can exercise the registered tool's execute path.
+export function toolDefinition(engine) {
   const textSchema = (description) => ({ type: 'string', description });
   return {
     name: TOOL_NAME,
@@ -279,12 +322,16 @@ function toolDefinition(engine) {
     },
     timeoutMs: TOOL_TIMEOUT_MS,
     execute: async (args, exec) => {
-      const payload = args && typeof args === 'object' ? args : {};
+      const payload = validateArgs(args);
       const result = await engine.client.request('memory.execute', payload, exec?.signal);
+      const content = typeof result?.content === 'string'
+        ? result.content
+        : JSON.stringify(result) ?? '';
+      const revision = typeof result?.revision === 'string' ? result.revision : '';
       return {
-        content: typeof result?.content === 'string'
-          ? result.content
-          : JSON.stringify(result) ?? '',
+        content: revision && typeof result?.content === 'string'
+          ? `${content}\n\nrevision: ${revision}`
+          : content,
       };
     },
   };

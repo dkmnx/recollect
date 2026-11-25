@@ -1,9 +1,9 @@
 // E2E verifier for the dsh-recollect per-workspace Host plugin.
 // Run with: node verify.mjs <adapter-directory>
-// audit: behavior - proves the shipped bundle delegates canonicalization and drives a real engine RPC round trip.
-// audit: regression - a lost registration or a fixed binding would change the asserted schema or project id.
+// audit: behavior - proves the shipped bundle delegates canonicalization, drives a real engine RPC round trip, and rejects invalid memory.execute arguments before they reach the engine.
+// audit: regression - a lost registration, a fixed binding, or a removed argument guard would change the asserted schema, project id, or error result.
 // audit: coverage gap - live DSH activation is verified separately with cordis_inspect and a real scoped tool call.
-// audit: seam - the engine child is driven over its real stdio JSON-RPC boundary; no production test hook exists.
+// audit: seam - the engine child is driven over its real stdio JSON-RPC boundary; the toolDefinition export lets the verifier call the registered tool without a live DSH host.
 
 import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -66,6 +66,113 @@ check('plugin declares required services and tool name', () => {
   }
   if (typeof mod.apply !== 'function') throw new Error('apply export required');
   if (mod.TOOL_NAME !== 'recollect_memory') throw new Error('tool name mismatch');
+});
+
+check('tool rejects invalid memory.execute arguments before RPC', async () => {
+  const calls = [];
+  const tool = mod.toolDefinition({
+    client: {
+      request: (method, params) => {
+        calls.push([method, params]);
+        return Promise.resolve({ content: 'ok' });
+      },
+    },
+  });
+  // Each case mirrors a rule the engine enforces in internal/rpc/memory.go and
+  // internal/engine/mutations.go. The guard fails these early; the engine stays
+  // authoritative for everything else (revision conflicts, bad limit, etc.).
+  const invalid = [
+    [{ target: 'bogus', operation: 'read' }, 'target must be project or user'],
+    [{ target: 'project', operation: 'bogus' }, 'unsupported operation'],
+    [{ target: 'project', operation: 'read' }, 'name is required for read'],
+    [{ target: 'project', operation: 'search' }, 'query is required for search'],
+    [{ target: 'project', operation: 'append', name: 'x', body: 'b' }, 'requestID is required for append'],
+    [{ target: 'project', operation: 'append', requestID: 'r1', body: 'b' }, 'description is required for append'],
+    [{ target: 'user', operation: 'append', requestID: 'r1', description: 'd' }, 'reason is required for append'],
+    [{ target: 'project', operation: 'correct', requestID: 'r1', revision: 'v1' }, 'name is required for correct'],
+    [{ target: 'project', operation: 'delete', requestID: 'r1', revision: 'v1' }, 'name is required for delete'],
+    [{ target: 'project', operation: 'correct', requestID: 'r1' }, 'revision is required for correct'],
+    [{ target: 'project', operation: 'delete', requestID: 'r1' }, 'revision is required for delete'],
+    [{ target: 'project', operation: 'correct', revision: 'v1', name: 'x' }, 'requestID is required for correct'],
+    [{ target: 'project', operation: 'delete', revision: 'v1', name: 'x' }, 'requestID is required for delete'],
+    [{ target: 'project', operation: 'read', name: '   ' }, 'name is required for read'],
+    [null, 'target must be project or user'],
+    [[], 'target must be project or user'],
+  ];
+  for (const [args, message] of invalid) {
+    let error = null;
+    try { await tool.execute(args); } catch (caught) { error = caught; }
+    if (!error || !error.message.includes(message)) {
+      throw new Error(`invalid args not rejected: ${JSON.stringify(args)} (${error?.message})`);
+    }
+  }
+  if (calls.length) throw new Error(`invalid args reached the engine: ${calls.length} RPC call(s)`);
+
+  // Valid combinations for every operation and both scopes must pass unchanged.
+  const valid = [
+    { target: 'project', operation: 'read', name: 'x' },
+    { target: 'user', operation: 'read' },
+    { target: 'user', operation: 'read', name: 'x' },
+    { target: 'project', operation: 'search', query: 'q' },
+    { target: 'user', operation: 'search', query: 'q' },
+    { target: 'project', operation: 'append', requestID: 'r1', description: 'd', body: 'b' },
+    { target: 'user', operation: 'append', requestID: 'r1', description: 'd', reason: 'why' },
+    { target: 'project', operation: 'correct', requestID: 'r1', revision: 'v1', name: 'x' },
+    { target: 'user', operation: 'correct', requestID: 'r1', revision: 'v1' },
+    { target: 'project', operation: 'delete', requestID: 'r1', revision: 'v1', name: 'x' },
+    { target: 'user', operation: 'delete', requestID: 'r1', revision: 'v1' },
+  ];
+  for (const args of valid) {
+    try { await tool.execute(args); } catch (error) {
+      throw new Error(`valid args rejected: ${JSON.stringify(args)} (${error.message})`);
+    }
+  }
+  if (calls.length !== valid.length) {
+    throw new Error(`expected ${valid.length} RPC calls for valid args, got ${calls.length}`);
+  }
+  for (let i = 0; i < calls.length; i += 1) {
+    const [method, params] = calls[i];
+    if (method !== 'memory.execute') throw new Error(`unexpected RPC method: ${method}`);
+    if (JSON.stringify(params) !== JSON.stringify(valid[i])) {
+      throw new Error(`valid args mutated: ${JSON.stringify(params)}`);
+    }
+  }
+});
+
+check('tool surfaces read revision so edits can use it', async () => {
+  const calls = [];
+  const tool = mod.toolDefinition({
+    client: {
+      request: (method, params) => {
+        calls.push([method, params]);
+        if (params.operation === 'read') {
+          return Promise.resolve({ content: '---\nname: x\n---\nbody', revision: 'rev-123' });
+        }
+        return Promise.resolve({ target: params.target, operation: params.operation, revision: 'rev-456' });
+      },
+    },
+  });
+  const read = await tool.execute({ target: 'project', operation: 'read', name: 'x' });
+  if (!read.content.includes('revision: rev-123')) {
+    throw new Error(`read revision missing from tool output: ${JSON.stringify(read)}`);
+  }
+  const append = await tool.execute({
+    target: 'project', operation: 'append', requestID: 'r1', description: 'd', body: 'b',
+  });
+  if (!append.content.includes('"revision":"rev-456"')) {
+    throw new Error(`mutation revision missing from tool output: ${JSON.stringify(append)}`);
+  }
+});
+
+check('shipped docs carry release links and correct verify command', () => {
+  const changelog = read('CHANGELOG.md');
+  if (!changelog.includes('[v0.1.0]: https://github.com/dkmnx/recollect/compare/9ddfd25cb1f64ff34c071785c27100c5caa5ae71...dsh-recollect-v0.1.0')) {
+    throw new Error('CHANGELOG comparison link missing');
+  }
+  const readme = read('README.md');
+  if (!readme.includes('node adapters/dsh/verify.mjs adapters/dsh')) {
+    throw new Error('README verify command is not runnable from the repo root');
+  }
 });
 
 check('relative userDir is rejected and absolute userDir is preserved', () => {
@@ -215,7 +322,7 @@ let passed = 0;
 let failed = 0;
 for (const [name, fn] of checks) {
   try {
-    fn();
+    await fn();
     console.log(`PASS ${name}`);
     passed += 1;
   } catch (error) {
