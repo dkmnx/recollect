@@ -53,6 +53,7 @@ check('locale carries display metadata', () => {
 
 check('icon and license match the Recollect source', () => {
   if (sha(join(bundle, 'icon.svg')) !== sha(join(repoRoot, 'assets', 'icon.svg'))) throw new Error('icon differs');
+  if (sha(join(bundle, 'icon.png')) !== sha(join(repoRoot, 'assets', 'icon.png'))) throw new Error('raster icon differs');
   if (sha(join(bundle, 'LICENSE')) !== sha(join(repoRoot, 'LICENSE'))) throw new Error('license differs');
 });
 
